@@ -1,0 +1,34 @@
+# Secrets
+secrets/
+!secrets/.gitkeep
+
+# Data volumes
+data/
+prometheus-data/
+grafana-data/
+alertmanager-data/
+
+# Environment
+.env
+
+# Backups
+backups/
+*.backup
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*~
+

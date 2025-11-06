@@ -1,0 +1,102 @@
+global:
+  resolve_timeout: 5m
+  # Uncomment and set your Slack webhook URL to enable Slack notifications
+  # slack_api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+
+# Templates for alert messages
+templates:
+  - '/etc/alertmanager/*.tmpl'
+
+# Route tree
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'default'
+  
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'slack-critical'
+      group_wait: 5s
+      repeat_interval: 3h
+    
+    # Warning alerts - grouped notification
+    - match:
+        severity: warning
+      receiver: 'slack-warnings'
+      group_wait: 30s
+      repeat_interval: 6h
+    
+    # Info alerts (like new delegations)
+    - match:
+        severity: info
+      receiver: 'slack-info'
+      group_wait: 2m
+      repeat_interval: 24h
+
+# Inhibition rules - suppress certain alerts when others are firing
+inhibit_rules:
+  # Inhibit warning if critical is firing for same alert
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+receivers:
+  # Default receiver - logs to Alertmanager UI (http://localhost:9093)
+  # To enable Slack, uncomment slack_api_url above and configure slack_configs
+  - name: 'default'
+    # Add webhook_configs or email_configs here if needed
+
+  # Critical alerts - uncomment and configure slack_api_url above to enable
+  - name: 'slack-critical'
+    # slack_configs:
+    #   - channel: '#cosmos-validator-alerts'
+    #     username: 'Cosmos Validator Monitor'
+    #     icon_emoji: ':rotating_light:'
+    #     color: 'danger'
+    #     title: '🚨 CRITICAL: {{ .GroupLabels.alertname }}'
+    #     text: >-
+    #       {{ range .Alerts }}
+    #         *Alert:* {{ .Annotations.summary }}
+    #         *Description:* {{ .Annotations.description }}
+    #         *Instance:* {{ .Labels.instance }}
+    #         *Started:* {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+    #       {{ end }}
+    #     send_resolved: true
+
+  # Warning alerts - uncomment and configure slack_api_url above to enable
+  - name: 'slack-warnings'
+    # slack_configs:
+    #   - channel: '#cosmos-validator-alerts'
+    #     username: 'Cosmos Validator Monitor'
+    #     icon_emoji: ':warning:'
+    #     color: 'warning'
+    #     title: '⚠️ WARNING: {{ .GroupLabels.alertname }}'
+    #     text: >-
+    #       {{ range .Alerts }}
+    #         *Alert:* {{ .Annotations.summary }}
+    #         *Description:* {{ .Annotations.description }}
+    #         *Instance:* {{ .Labels.instance }}
+    #       {{ end }}
+    #     send_resolved: true
+
+  # Info alerts (new delegations, etc) - uncomment and configure slack_api_url above to enable
+  - name: 'slack-info'
+    # slack_configs:
+    #   - channel: '#cosmos-validator-alerts'
+    #     username: 'Cosmos Validator Monitor'
+    #     icon_emoji: ':information_source:'
+    #     color: 'good'
+    #     title: 'ℹ️ INFO: {{ .GroupLabels.alertname }}'
+    #     text: >-
+    #       {{ range .Alerts }}
+    #         *{{ .Annotations.summary }}*
+    #         {{ .Annotations.description }}
+    #       {{ end }}
+    #     send_resolved: false
+

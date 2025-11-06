@@ -1,0 +1,41 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+docs/
+*.md
+
+# Secrets
+secrets/
+*.key
+*.json
+mnemonic.txt
+
+# Data
+data/
+*-data/
+backups/
+
+# Docker
+docker-compose.yml
+Dockerfile
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Monitoring configs (not needed in container)
+prometheus/
+grafana/
+alertmanager/
+
