@@ -1,10 +1,30 @@
 #!/bin/bash
 set -e
 
-DAEMON_HOME=${DAEMON_HOME:-/root/.gaia}
-MNEMONIC_FILE="/run/secrets/validator_mnemonic"
+DAEMON_HOME=${DAEMON_HOME}
+DAEMON_NAME=${DAEMON_NAME}
+CHAIN_NETWORK=${CHAIN_NETWORK}
+DENOM_DISPLAY=${DENOM_DISPLAY}
 
-echo "Setting up validator keys..."
+# Validate required environment variables
+if [ -z "$DAEMON_HOME" ] || [ -z "$DAEMON_NAME" ]; then
+    echo "Error: Required environment variables not set!"
+    echo "Missing: DAEMON_HOME or DAEMON_NAME"
+    exit 1
+fi
+
+# Determine mnemonic secret file name based on chain
+CHAIN_NAME=$(echo "$DAEMON_HOME" | sed 's/.*\.\(.*\)/\1/')
+MNEMONIC_FILE="/run/secrets/${CHAIN_NAME}_mnemonic"
+
+# Fallback to generic validator_mnemonic if chain-specific not found
+if [ ! -f "$MNEMONIC_FILE" ]; then
+    MNEMONIC_FILE="/run/secrets/validator_mnemonic"
+fi
+
+echo "Setting up validator keys for ${CHAIN_NETWORK}..."
+echo "Daemon: $DAEMON_NAME"
+echo "Home: $DAEMON_HOME"
 
 # Check if mnemonic exists
 if [ -f "$MNEMONIC_FILE" ] && [ -s "$MNEMONIC_FILE" ]; then
@@ -12,7 +32,7 @@ if [ -f "$MNEMONIC_FILE" ] && [ -s "$MNEMONIC_FILE" ]; then
     
     # Import validator key from mnemonic
     echo "Importing validator key..."
-    cat "$MNEMONIC_FILE" | gaiad keys add validator --recover --keyring-backend test --home "$DAEMON_HOME"
+    cat "$MNEMONIC_FILE" | $DAEMON_NAME keys add validator --recover --keyring-backend test --home "$DAEMON_HOME"
     
 else
     echo "No mnemonic found. Generating new keys..."
@@ -21,7 +41,7 @@ else
     echo ""
     
     # Generate new key
-    gaiad keys add validator --keyring-backend test --home "$DAEMON_HOME" 2>&1 | tee /tmp/validator_key_output.txt
+    $DAEMON_NAME keys add validator --keyring-backend test --home "$DAEMON_HOME" 2>&1 | tee /tmp/validator_key_output.txt
     
     # Extract mnemonic from output (last line is the mnemonic)
     MNEMONIC=$(grep -A 1 "Important" /tmp/validator_key_output.txt | tail -1)
@@ -43,12 +63,12 @@ fi
 echo ""
 echo "Validator Key Information:"
 echo "=========================="
-VALIDATOR_ADDRESS=$(gaiad keys show validator -a --keyring-backend test --home "$DAEMON_HOME")
+VALIDATOR_ADDRESS=$($DAEMON_NAME keys show validator -a --keyring-backend test --home "$DAEMON_HOME")
 echo "Validator Address: $VALIDATOR_ADDRESS"
 echo ""
 echo "⚠️  IMPORTANT NEXT STEPS:"
-echo "1. Send at least 2 ATOM to: $VALIDATOR_ADDRESS"
-echo "   (1 ATOM for self-delegation + extra for transaction fees)"
+echo "1. Send at least 2 $DENOM_DISPLAY to: $VALIDATOR_ADDRESS"
+echo "   (1 $DENOM_DISPLAY for self-delegation + extra for transaction fees)"
 echo "2. Wait for the node to fully sync"
 echo "3. Run the create-validator transaction"
 echo ""

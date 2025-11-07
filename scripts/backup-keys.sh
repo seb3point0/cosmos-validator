@@ -1,11 +1,13 @@
 #!/bin/bash
 set -e
 
-DAEMON_HOME=${DAEMON_HOME:-/root/.gaia}
-BACKUP_DIR=${BACKUP_DIR:-/root/.gaia/backup}
+DAEMON_HOME=${DAEMON_HOME}
+DAEMON_NAME=${DAEMON_NAME}
+CHAIN_NETWORK=${CHAIN_NETWORK}
+BACKUP_DIR=${BACKUP_DIR:-$DAEMON_HOME/backup}
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-echo "Cosmos Validator Key Backup Utility"
+echo "${CHAIN_NETWORK} Validator Key Backup Utility"
 echo "===================================="
 echo ""
 
@@ -87,7 +89,7 @@ echo "⚠️  CRITICAL BACKUP INSTRUCTIONS"
 echo "========================================="
 echo ""
 echo "1. Copy this backup to a secure location:"
-echo "   docker cp cosmos-validator:$BACKUP_ARCHIVE ./"
+echo "   docker cp <container>:$BACKUP_ARCHIVE ./"
 echo ""
 echo "2. Store multiple copies in different secure locations"
 echo "3. NEVER commit these files to version control"
@@ -105,4 +107,3 @@ ls -lh "$BACKUP_DIR"
 
 echo ""
 echo "Backup complete!"
-

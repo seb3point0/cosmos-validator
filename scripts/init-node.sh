@@ -1,40 +1,64 @@
 #!/bin/bash
 set -e
 
-DAEMON_HOME=${DAEMON_HOME:-/root/.gaia}
-CHAIN_ID=${CHAIN_ID:-cosmoshub-4}
-MONIKER=${MONIKER:-my-validator}
+DAEMON_HOME=${DAEMON_HOME}
+DAEMON_NAME=${DAEMON_NAME}
+CHAIN_ID=${CHAIN_ID}
+MONIKER=${MONIKER}
+GENESIS_URL=${GENESIS_URL:-}
+PERSISTENT_PEERS=${PERSISTENT_PEERS:-}
+STATE_SYNC_RPC=${STATE_SYNC_RPC:-}
+MIN_GAS_PRICES=${MIN_GAS_PRICES}
+PRUNING=${PRUNING:-custom}
+PRUNING_KEEP_RECENT=${PRUNING_KEEP_RECENT:-100}
+PRUNING_KEEP_EVERY=${PRUNING_KEEP_EVERY:-0}
+PRUNING_INTERVAL=${PRUNING_INTERVAL:-10}
+P2P_PORT=${P2P_PORT:-26656}
 
-echo "Initializing Cosmos Hub node..."
+# Validate required environment variables
+if [ -z "$DAEMON_HOME" ] || [ -z "$DAEMON_NAME" ] || [ -z "$CHAIN_ID" ] || [ -z "$MONIKER" ] || [ -z "$MIN_GAS_PRICES" ]; then
+    echo "Error: Required environment variables not set!"
+    echo "Missing: DAEMON_HOME, DAEMON_NAME, CHAIN_ID, MONIKER, or MIN_GAS_PRICES"
+    exit 1
+fi
+
+echo "Initializing ${CHAIN_NETWORK:-Chain} node..."
+echo "Daemon: $DAEMON_NAME"
 echo "Chain ID: $CHAIN_ID"
 echo "Moniker: $MONIKER"
+echo "Home: $DAEMON_HOME"
 
 # Initialize the node
-gaiad init "$MONIKER" --chain-id "$CHAIN_ID" --home "$DAEMON_HOME"
+$DAEMON_NAME init "$MONIKER" --chain-id "$CHAIN_ID" --home "$DAEMON_HOME"
 
-# Download a minimal genesis file (will be replaced by state-sync)
+# Download genesis file
 echo "Downloading genesis file..."
 cd "$DAEMON_HOME/config"
-# Use a lightweight genesis from a reliable source
-curl -Lsf "https://snapshots.polkachu.com/genesis/cosmos/genesis.json" -o genesis.json
-if [ $? -ne 0 ]; then
-    echo "Trying alternative genesis source..."
-    curl -Lsf "https://rpc.cosmos.network/genesis" | jq '.result.genesis' > genesis.json
+if [ ! -z "$GENESIS_URL" ]; then
+    echo "Using genesis URL: $GENESIS_URL"
+    curl -Lsf "$GENESIS_URL" -o genesis.json
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to download genesis file from $GENESIS_URL"
+        exit 1
+    fi
+    echo "Genesis file downloaded successfully"
+else
+    echo "Warning: No GENESIS_URL provided, skipping genesis download"
 fi
-echo "Genesis file downloaded"
 
 # Configure config.toml
 CONFIG_FILE="$DAEMON_HOME/config/config.toml"
 echo "Configuring config.toml..."
 
-# P2P Configuration  
-# Add persistent peers from cosmos.directory
-PEERS="bf8328b66dceb4987e5cd94430af66045e59899f@public-seed.cosmos.vitwit.com:26656,cfd785a4224c7940e9a10f6c1ab24c343e923bec@164.68.107.188:26656,d72b3011ed46d783e369fdf8ae2055b99a1e5074@173.249.50.25:26656"
-sed -i.bak "s|persistent_peers = \"\"|persistent_peers = \"$PEERS\"|" "$CONFIG_FILE"
+# P2P Configuration
+if [ ! -z "$PERSISTENT_PEERS" ]; then
+    echo "Setting persistent peers..."
+    sed -i.bak "s|persistent_peers = \"\"|persistent_peers = \"$PERSISTENT_PEERS\"|" "$CONFIG_FILE"
+fi
 
 # Set external address if provided
 if [ ! -z "$EXTERNAL_IP" ]; then
-    sed -i.bak "s/external_address = \"\"/external_address = \"$EXTERNAL_IP:26656\"/" "$CONFIG_FILE"
+    sed -i.bak "s/external_address = \"\"/external_address = \"$EXTERNAL_IP:${P2P_PORT}\"/" "$CONFIG_FILE"
 fi
 
 # Enable Prometheus metrics
@@ -44,17 +68,21 @@ sed -i.bak 's/prometheus = false/prometheus = true/' "$CONFIG_FILE"
 sed -i.bak 's/timeout_commit = "5s"/timeout_commit = "5s"/' "$CONFIG_FILE"
 
 # Configure state-sync for fast sync
-echo "Configuring state-sync..."
-# Use Polkachu's state sync configuration
-RPC1="https://cosmos-rpc.polkachu.com:443"
-RPC2="https://rpc.cosmos.network:443"
-
-# Get latest block height and trust hash from RPC  
-LATEST_HEIGHT=$(curl -s https://cosmos-rpc.polkachu.com/block | jq -r '.result.block.header.height' 2>/dev/null || echo "")
-
-if [ -n "$LATEST_HEIGHT" ] && [ "$LATEST_HEIGHT" != "null" ]; then
-    TRUST_HEIGHT=$((LATEST_HEIGHT - 2000))
-    TRUST_HASH=$(curl -s "https://cosmos-rpc.polkachu.com/block?height=$TRUST_HEIGHT" | jq -r '.result.block_id.hash' 2>/dev/null || echo "")
+if [ ! -z "$STATE_SYNC_RPC" ]; then
+    echo "Configuring state-sync..."
+    # Split comma-separated RPC list
+    IFS=',' read -ra RPC_SERVERS <<< "$STATE_SYNC_RPC"
+    RPC1="${RPC_SERVERS[0]}"
+    RPC2="${RPC_SERVERS[1]:-$RPC1}"
+    
+    echo "Using RPC servers: $RPC1, $RPC2"
+    
+    # Get latest block height and trust hash from RPC
+    LATEST_HEIGHT=$(curl -s "$RPC1/block" | jq -r '.result.block.header.height' 2>/dev/null || echo "")
+    
+    if [ -n "$LATEST_HEIGHT" ] && [ "$LATEST_HEIGHT" != "null" ]; then
+        TRUST_HEIGHT=$((LATEST_HEIGHT - 2000))
+        TRUST_HASH=$(curl -s "$RPC1/block?height=$TRUST_HEIGHT" | jq -r '.result.block_id.hash' 2>/dev/null || echo "")
     
     if [ -n "$TRUST_HASH" ] && [ "$TRUST_HASH" != "null" ]; then
         echo "State-sync configuration:"
@@ -73,17 +101,19 @@ if [ -n "$LATEST_HEIGHT" ] && [ "$LATEST_HEIGHT" != "null" ]; then
         echo "Warning: Could not fetch trust hash. Skipping state-sync setup."
         echo "Node will sync from peers (this may take longer)."
     fi
+    else
+        echo "Warning: Could not fetch latest height. Skipping state-sync setup."
+        echo "Node will sync from peers (this may take longer)."
+    fi
 else
-    echo "Warning: Could not fetch latest height. Skipping state-sync setup."
-    echo "Node will sync from peers (this may take longer)."
+    echo "No STATE_SYNC_RPC configured. Skipping state-sync setup."
 fi
 
-# Configure pruning for validators
+# Configure app.toml
 APP_CONFIG="$DAEMON_HOME/config/app.toml"
 echo "Configuring app.toml..."
 
-# Set minimum gas prices (use env var if provided, otherwise use default)
-MIN_GAS_PRICES=${MIN_GAS_PRICES:-"0.005uatom"}
+# Set minimum gas prices
 echo "Setting minimum gas prices to: $MIN_GAS_PRICES"
 sed -i.bak "s/minimum-gas-prices = \"\"/minimum-gas-prices = \"$MIN_GAS_PRICES\"/" "$APP_CONFIG"
 
@@ -93,19 +123,22 @@ sed -i.bak '/\[api\]/,/\[/ s/enable = false/enable = true/' "$APP_CONFIG"
 # Enable gRPC
 sed -i.bak '/\[grpc\]/,/\[/ s/enable = false/enable = true/' "$APP_CONFIG"
 
-# Configure pruning (custom for validators)
-sed -i.bak 's/pruning = "default"/pruning = "custom"/' "$APP_CONFIG"
-sed -i.bak 's/pruning-keep-recent = "0"/pruning-keep-recent = "100"/' "$APP_CONFIG"
-sed -i.bak 's/pruning-keep-every = "0"/pruning-keep-every = "0"/' "$APP_CONFIG"
-sed -i.bak 's/pruning-interval = "0"/pruning-interval = "10"/' "$APP_CONFIG"
+# Configure pruning
+echo "Configuring pruning: $PRUNING"
+sed -i.bak "s/pruning = \"default\"/pruning = \"$PRUNING\"/" "$APP_CONFIG"
+sed -i.bak "s/pruning-keep-recent = \"0\"/pruning-keep-recent = \"$PRUNING_KEEP_RECENT\"/" "$APP_CONFIG"
+sed -i.bak "s/pruning-keep-every = \"0\"/pruning-keep-every = \"$PRUNING_KEEP_EVERY\"/" "$APP_CONFIG"
+sed -i.bak "s/pruning-interval = \"0\"/pruning-interval = \"$PRUNING_INTERVAL\"/" "$APP_CONFIG"
 
 # Enable telemetry for Prometheus
 sed -i.bak 's/enabled = false/enabled = true/' "$APP_CONFIG" 
 sed -i.bak 's/prometheus-retention-time = 0/prometheus-retention-time = 60/' "$APP_CONFIG"
 
 echo "Note: Snapshot download skipped for initial setup."
-echo "The node will sync from the network. This may take several hours."
-echo "To use a snapshot, you can manually download from https://polkachu.com/tendermint_snapshots/cosmos"
+echo "The node will sync from the network using state-sync or from peers."
+if [ ! -z "$SNAPSHOT_URL" ]; then
+    echo "To use a snapshot later, run the apply-snapshot script with: $SNAPSHOT_URL"
+fi
 
 # Clean up backup files
 rm -f "$CONFIG_FILE.bak" "$APP_CONFIG.bak"

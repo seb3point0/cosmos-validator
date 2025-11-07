@@ -15,6 +15,7 @@ ARG CHAIN_BINARY_URL
 ARG CHAIN_BINARY_NAME
 ARG CHAIN_VERSION
 ARG DAEMON_HOME
+ARG RPC_PORT=26657
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
@@ -68,9 +69,11 @@ ENV DAEMON_NAME=${CHAIN_BINARY_NAME} \
 # Set working directory
 WORKDIR ${DAEMON_HOME}
 
-# Health check is configured in docker-compose.yml per chain
-# (Each chain uses different ports, so healthcheck is set at service level)
+# Health check (port configured via ARG, defaults to 26657)
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=120s \
+    CMD curl -f http://localhost:${RPC_PORT}/health || exit 1
 
 # Default command
 CMD ["/scripts/entrypoint.sh"]
+
 

@@ -1,0 +1,67 @@
+# Global Validator Configuration
+# This file contains global settings and per-chain validator overrides
+
+# ============================================
+# Monitoring Configuration
+# ============================================
+monitoring:
+  # Prometheus data retention period
+  prometheus_retention: "15d"
+  
+  # Grafana admin password
+  grafana_admin_password: "admin_change_me_now"
+
+# ============================================
+# Alerting Configuration
+# ============================================
+alerting:
+  # Slack webhook URL for alerts
+  # Get your webhook URL from: https://api.slack.com/messaging/webhooks
+  slack_webhook_url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+  
+  # Alert flags
+  alert_on_upgrade: true
+  alert_on_sync_issues: true
+  alert_on_missed_blocks: true
+
+# ============================================
+# Upgrade Monitoring
+# ============================================
+upgrade_monitoring:
+  # How often to check for upgrades (in seconds)
+  check_interval: 300  # 5 minutes
+  
+  # How many hours before upgrade to prepare binaries
+  preparation_hours: 48
+
+# ============================================
+# Backup Configuration
+# ============================================
+backup:
+  enabled: true
+  schedule: "0 0 * * *"  # Daily at midnight (cron format)
+
+# ============================================
+# Default Validator Configuration
+# ============================================
+# Default validator settings for all chains
+# These can be overridden per-chain in chains.yaml
+validator_defaults:
+  # Validator moniker (node name) - will be <chain>-validator if not set
+  moniker: ""
+  
+  # External IP address (required for validator)
+  external_ip: ""
+  
+  # Validator metadata
+  name: "My Validator"
+  website: "https://example.com"
+  identity: ""  # Keybase identity (optional)
+  details: "A reliable Cosmos validator"
+  security_contact: "security@example.com"
+  
+  # Commission rates (as decimals)
+  commission_rate: 0.10  # 10%
+  commission_max_rate: 0.20  # 20%
+  commission_max_change_rate: 0.01  # 1% per day
+

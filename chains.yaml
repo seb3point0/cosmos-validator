@@ -1,0 +1,123 @@
+# Multi-Chain Validator Configuration
+# This file defines all supported Cosmos chains and their parameters
+
+chains:
+  cosmos:
+    enabled: true
+    chain_id: "cosmoshub-4"
+    chain_name: "Cosmos Hub"
+    network: "cosmos"
+    
+    # Binary configuration
+    binary_name: "gaiad"
+    binary_version: "v25.1.0"
+    binary_url: "https://github.com/cosmos/gaia/releases/download/v25.1.0/gaiad-v25.1.0-linux-amd64"
+    daemon_home: "/root/.gaia"
+    
+    # Port configuration (base ports)
+    ports:
+      p2p: 26656
+      rpc: 26657
+      rest_api: 1317
+      grpc: 9090
+      prometheus: 26660
+    
+    # Network configuration
+    genesis_url: "https://snapshots.polkachu.com/genesis/cosmos/genesis.json"
+    snapshot_url: "https://snapshots.polkachu.com/snapshots/cosmos/cosmos_28294157.tar.lz4"
+    snapshot_wasm_url: "https://snapshots.polkachu.com/wasm/cosmos/cosmos_wasmonly.tar.lz4"
+    
+    # Peers and RPC endpoints
+    persistent_peers: "bf8328b66dceb4987e5cd94430af66045e59899f@public-seed.cosmos.vitwit.com:26656,cfd785a4224c7940e9a10f6c1ab24c343e923bec@164.68.107.188:26656,d72b3011ed46d783e369fdf8ae2055b99a1e5074@173.249.50.25:26656"
+    state_sync_rpc:
+      - "https://cosmos-rpc.polkachu.com:443"
+      - "https://rpc.cosmos.network:443"
+    
+    # Chain-specific settings
+    min_gas_price: "0.005uatom"
+    denom: "uatom"
+    denom_display: "ATOM"
+    decimals: 6
+    block_time_seconds: 6
+    block_explorer_url: "https://www.mintscan.io/cosmos/validators/{address}"
+    min_self_delegation: "1000000"  # 1 ATOM (calculated from decimals: 10^6)
+    
+    # Pruning settings
+    pruning: "custom"
+    pruning_keep_recent: "100"
+    pruning_keep_every: "0"
+    pruning_interval: "10"
+    
+    # Cosmovisor settings
+    cosmovisor_enabled: true
+    auto_download_binaries: true
+    restart_after_upgrade: true
+    
+    # Repository for upgrades
+    repo: "https://github.com/cosmos/gaia"
+    
+    # Validator configuration (optional - overrides config.yml defaults)
+    # If not specified, uses defaults from config.yml
+    # Example: override only commission_rate, everything else uses config.yml defaults
+    # validator:
+    #   commission_rate: 0.20  # 20% for this chain only
+    
+  osmosis:
+    enabled: true
+    chain_id: "osmosis-1"
+    chain_name: "Osmosis"
+    network: "osmosis"
+    
+    # Binary configuration
+    binary_name: "osmosisd"
+    binary_version: "v28.0.0"
+    binary_url: "https://github.com/osmosis-labs/osmosis/releases/download/v28.0.0/osmosisd-28.0.0-linux-amd64"
+    daemon_home: "/root/.osmosisd"
+    
+    # Port configuration (offset by 100 from cosmos)
+    ports:
+      p2p: 26756
+      rpc: 26757
+      rest_api: 1417
+      grpc: 9190
+      prometheus: 26760
+    
+    # Network configuration
+    genesis_url: "https://snapshots.polkachu.com/genesis/osmosis/genesis.json"
+    snapshot_url: "https://snapshots.polkachu.com/snapshots/osmosis/osmosis_28311949.tar.lz4"
+    snapshot_wasm_url: "https://snapshots.polkachu.com/wasm/osmosis/osmosis_wasmonly.tar.lz4"
+    
+    # Peers and RPC endpoints
+    persistent_peers: "f515a8599b40f0e84dfad935ba414674ab11a668@osmosis.blockpane.com:26656,6bcdbcfd5d2c6ba58460f10dbcfde58278212833@osmosis.artifact-staking.io:26656,77bb5fb697d002a8eeaaeee4c6a1e0e0aba3b58a@osmosis.peer.stavr.tech:21096"
+    state_sync_rpc:
+      - "https://osmosis-rpc.polkachu.com:443"
+      - "https://rpc.osmosis.zone:443"
+    
+    # Chain-specific settings
+    min_gas_price: "0.0025uosmo"
+    denom: "uosmo"
+    denom_display: "OSMO"
+    decimals: 6
+    block_time_seconds: 6
+    block_explorer_url: "https://www.mintscan.io/osmosis/validators/{address}"
+    min_self_delegation: "1000000"  # 1 OSMO (calculated from decimals: 10^6)
+    
+    # Pruning settings
+    pruning: "custom"
+    pruning_keep_recent: "100"
+    pruning_keep_every: "0"
+    pruning_interval: "10"
+    
+    # Cosmovisor settings
+    cosmovisor_enabled: true
+    auto_download_binaries: true
+    restart_after_upgrade: true
+    
+    # Repository for upgrades
+    repo: "https://github.com/osmosis-labs/osmosis"
+    
+    # Validator configuration (optional - overrides config.yml defaults)
+    # Example: override commission_rate to 20% for Osmosis
+    validator:
+      commission_rate: 0.20  # 20% for Osmosis (overrides config.yml default)
+

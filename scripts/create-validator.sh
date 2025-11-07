@@ -1,15 +1,29 @@
 #!/bin/bash
 set -e
 
-DAEMON_HOME=${DAEMON_HOME:-/root/.gaia}
-CHAIN_ID=${CHAIN_ID:-cosmoshub-4}
-MONIKER=${MONIKER:-my-validator}
+DAEMON_HOME=${DAEMON_HOME}
+DAEMON_NAME=${DAEMON_NAME}
+CHAIN_ID=${CHAIN_ID}
+MONIKER=${MONIKER}
+DENOM=${DENOM}
+DENOM_DISPLAY=${DENOM_DISPLAY}
+MIN_GAS_PRICES=${MIN_GAS_PRICES}
+RPC_PORT=${RPC_PORT}
+MIN_SELF_DELEGATION=${MIN_SELF_DELEGATION:-1000000}
+DECIMALS=${DECIMALS:-6}
+
+# Validate required environment variables
+if [ -z "$DAEMON_HOME" ] || [ -z "$DAEMON_NAME" ] || [ -z "$CHAIN_ID" ] || [ -z "$RPC_PORT" ]; then
+    echo "Error: Required environment variables not set!"
+    echo "Missing: DAEMON_HOME, DAEMON_NAME, CHAIN_ID, or RPC_PORT"
+    exit 1
+fi
 
 # Validator metadata (can be overridden by environment variables)
 VALIDATOR_NAME=${VALIDATOR_NAME:-$MONIKER}
 VALIDATOR_WEBSITE=${VALIDATOR_WEBSITE:-""}
 VALIDATOR_IDENTITY=${VALIDATOR_IDENTITY:-""}
-VALIDATOR_DETAILS=${VALIDATOR_DETAILS:-"A Cosmos Hub validator"}
+VALIDATOR_DETAILS=${VALIDATOR_DETAILS:-"A validator"}
 VALIDATOR_SECURITY_CONTACT=${VALIDATOR_SECURITY_CONTACT:-""}
 
 # Commission rates
@@ -17,13 +31,13 @@ COMMISSION_RATE=${COMMISSION_RATE:-0.10}
 COMMISSION_MAX_RATE=${COMMISSION_MAX_RATE:-0.20}
 COMMISSION_MAX_CHANGE_RATE=${COMMISSION_MAX_CHANGE_RATE:-0.01}
 
-echo "Cosmos Hub Validator Creation"
+echo "${CHAIN_NETWORK:-Chain} Validator Creation"
 echo "=============================="
 echo ""
 
 # Check if node is synced
 echo "Checking sync status..."
-SYNC_INFO=$(curl -s http://localhost:26657/status | jq -r '.result.sync_info')
+SYNC_INFO=$(curl -s http://localhost:${RPC_PORT}/status | jq -r '.result.sync_info')
 CATCHING_UP=$(echo "$SYNC_INFO" | jq -r '.catching_up')
 LATEST_BLOCK_HEIGHT=$(echo "$SYNC_INFO" | jq -r '.latest_block_height')
 
@@ -38,25 +52,29 @@ echo "✓ Node is fully synced at block height: $LATEST_BLOCK_HEIGHT"
 echo ""
 
 # Get validator address
-VALIDATOR_ADDRESS=$(gaiad keys show validator -a --keyring-backend test --home "$DAEMON_HOME")
+VALIDATOR_ADDRESS=$($DAEMON_NAME keys show validator -a --keyring-backend test --home "$DAEMON_HOME")
 echo "Validator address: $VALIDATOR_ADDRESS"
 
 # Check account balance
 echo "Checking account balance..."
-BALANCE=$(gaiad query bank balances "$VALIDATOR_ADDRESS" --node http://localhost:26657 --output json | jq -r '.balances[] | select(.denom=="uatom") | .amount')
+BALANCE=$($DAEMON_NAME query bank balances "$VALIDATOR_ADDRESS" --node http://localhost:${RPC_PORT} --output json | jq -r ".balances[] | select(.denom==\"$DENOM\") | .amount")
 
 if [ -z "$BALANCE" ] || [ "$BALANCE" = "null" ]; then
     echo "❌ Error: No balance found!"
-    echo "Please send at least 2000000 uatom (2 ATOM) to: $VALIDATOR_ADDRESS"
+    echo "Please send at least 2 $DENOM_DISPLAY to: $VALIDATOR_ADDRESS"
     exit 1
 fi
 
-BALANCE_ATOM=$((BALANCE / 1000000))
-echo "Current balance: $BALANCE_ATOM ATOM ($BALANCE uatom)"
+DIVISOR=$(printf "1%0${DECIMALS}d" 0)
+BALANCE_DISPLAY=$(echo "scale=$DECIMALS; $BALANCE / $DIVISOR" | bc)
+echo "Current balance: $BALANCE_DISPLAY $DENOM_DISPLAY ($BALANCE $DENOM)"
 
-if [ "$BALANCE" -lt 2000000 ]; then
+BUFFER=$(printf "1%0${DECIMALS}d" 0)
+REQUIRED_BALANCE=$((MIN_SELF_DELEGATION + BUFFER))
+if [ "$BALANCE" -lt "$REQUIRED_BALANCE" ]; then
     echo "❌ Error: Insufficient balance!"
-    echo "Please send at least 2 ATOM to cover self-delegation and fees."
+    REQUIRED_DISPLAY=$(echo "scale=$DECIMALS; $REQUIRED_BALANCE / $DIVISOR" | bc)
+    echo "Please send at least $REQUIRED_DISPLAY $DENOM_DISPLAY to cover self-delegation and fees."
     exit 1
 fi
 
@@ -64,7 +82,7 @@ echo "✓ Sufficient balance available"
 echo ""
 
 # Get validator public key
-VALIDATOR_PUBKEY=$(gaiad tendermint show-validator --home "$DAEMON_HOME")
+VALIDATOR_PUBKEY=$($DAEMON_NAME tendermint show-validator --home "$DAEMON_HOME")
 echo "Validator public key: $VALIDATOR_PUBKEY"
 echo ""
 
@@ -79,7 +97,9 @@ echo "Security Contact: $VALIDATOR_SECURITY_CONTACT"
 echo "Commission Rate: $COMMISSION_RATE"
 echo "Commission Max Rate: $COMMISSION_MAX_RATE"
 echo "Commission Max Change Rate: $COMMISSION_MAX_CHANGE_RATE"
-echo "Self Delegation: 1000000 uatom (1 ATOM)"
+DIVISOR=$(printf "1%0${DECIMALS}d" 0)
+SELF_DELEGATION_DISPLAY=$(echo "scale=$DECIMALS; $MIN_SELF_DELEGATION / $DIVISOR" | bc)
+echo "Self Delegation: $MIN_SELF_DELEGATION $DENOM ($SELF_DELEGATION_DISPLAY $DENOM_DISPLAY)"
 echo ""
 
 read -p "Do you want to proceed with validator creation? (yes/no): " CONFIRM
@@ -97,7 +117,7 @@ VALIDATOR_JSON="$DAEMON_HOME/validator.json"
 cat > "$VALIDATOR_JSON" <<EOF
 {
     "pubkey": $VALIDATOR_PUBKEY,
-    "amount": "1000000uatom",
+    "amount": "${MIN_SELF_DELEGATION}${DENOM}",
     "moniker": "$VALIDATOR_NAME",
     "identity": "$VALIDATOR_IDENTITY",
     "website": "$VALIDATOR_WEBSITE",
@@ -111,15 +131,15 @@ cat > "$VALIDATOR_JSON" <<EOF
 EOF
 
 # Create validator using JSON file
-gaiad tx staking create-validator "$VALIDATOR_JSON" \
+$DAEMON_NAME tx staking create-validator "$VALIDATOR_JSON" \
     --from=validator \
     --keyring-backend=test \
     --chain-id="$CHAIN_ID" \
     --gas="auto" \
     --gas-adjustment="1.5" \
-    --gas-prices="0.005uatom" \
+    --gas-prices="$MIN_GAS_PRICES" \
     --home="$DAEMON_HOME" \
-    --node=http://localhost:26657 \
+    --node=http://localhost:${RPC_PORT} \
     --yes
 
 # Clean up
@@ -130,9 +150,9 @@ echo "✓ Validator creation transaction submitted!"
 echo ""
 echo "Please wait a few blocks for the transaction to be confirmed."
 echo "You can check your validator status with:"
-echo "  docker exec cosmos-validator /scripts/check-status.sh"
+echo "  docker exec <container> /scripts/check-status.sh"
 echo ""
 echo "To edit your validator description later, use:"
-echo "  gaiad tx staking edit-validator --website=\"URL\" --identity=\"KEYBASE\" ..."
+echo "  $DAEMON_NAME tx staking edit-validator --website=\"URL\" --identity=\"KEYBASE\" ..."
 echo ""
 

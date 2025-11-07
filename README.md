@@ -1,513 +1,500 @@
-# Cosmos Hub Validator - Docker Setup
+# Multi-Chain Cosmos Validator
 
-Complete, production-ready Cosmos Hub validator deployment with monitoring, alerting, and automatic upgrades via Cosmovisor.
+Production-ready multi-chain Cosmos validator deployment with monitoring, alerting, and automatic upgrades.
 
 ## Features
 
-- **Fully Dockerized**: Single `docker-compose up` deployment
-- **Cosmovisor Integration**: Automatic binary upgrades
-- **Comprehensive Monitoring**: Prometheus + Grafana dashboards
-- **Smart Alerting**: Slack notifications for critical events, missed blocks, new delegations
-- **Secure Key Management**: Docker secrets for sensitive data
-- **State Sync/Snapshots**: Fast initial synchronization
-- **Best Practices**: Production-grade configuration for mainnet validators
+- **Multi-Chain Support**: Run validators for multiple Cosmos chains simultaneously
+- **Dockerized**: Single `make start` deployment
+- **Auto-Upgrades**: Cosmovisor + Polkachu API integration
+- **Monitoring**: Prometheus + Grafana dashboards for all chains
+- **Alerting**: Slack notifications for critical events
+- **Centralized Config**: Manage all chains from `chains.yaml`
 
-## Architecture
+## Quick Start: Adding a New Chain
 
+### Step 1: Configure Chain in `chains.yaml`
+
+Edit `chains.yaml` and ensure your chain is configured with `enabled: true`. Example:
+
+```yaml
+chains:
+  osmosis:
+    enabled: true
+    chain_id: "osmosis-1"
+    # ... other settings
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Cosmos Hub Validator Node (Cosmovisor + gaiad)         │
-│  ├─ P2P: 26656                                          │
-│  ├─ RPC: 26657                                          │
-│  ├─ API: 1317                                           │
-│  ├─ gRPC: 9090                                          │
-│  └─ Metrics: 26660 ──────────┐                         │
-└──────────────────────────────┼──────────────────────────┘
-                               │
-                               ▼
-         ┌────────────────────────────────────┐
-         │  Prometheus (Metrics & Alerts)     │
-         │  Port: 9090                        │
-         └────────┬───────────────────┬───────┘
-                  │                   │
-                  ▼                   ▼
-     ┌────────────────────┐  ┌──────────────────┐
-     │  Grafana           │  │  Alertmanager    │
-     │  Dashboard: 3000   │  │  Slack: 9093     │
-     └────────────────────┘  └──────────────────┘
+
+### Step 2: Create Mnemonic File
+
+```bash
+make create-mnemonic osmosis
+```
+
+This will prompt you to enter your mnemonic phrase and save it securely.
+
+### Step 3: Generate Configuration
+
+```bash
+make generate
+```
+
+Generates `docker-compose.yml` and `prometheus.yml` from `chains.yaml`.
+
+### Step 4: Start the Chain
+
+```bash
+make start-chain osmosis
+```
+
+### Step 5: Monitor
+
+```bash
+# View logs
+make logs-chain osmosis
+
+# Check status
+make status-chain osmosis
+```
+
+### Step 6: Fund and Create Validator
+
+```bash
+# Show validator address
+make show-address osmosis
+
+# Send tokens to the address, then create validator
+make create-validator osmosis
 ```
 
 ## Prerequisites
 
-- **Docker** and **Docker Compose** installed
-- **Minimum 4 CPU cores**, 16GB RAM, 500GB SSD
-- **Ubuntu 20.04+** or similar Linux distribution
-- **Public IP address** with ports 26656-26657 open
-- **At least 2 ATOM** for validator creation + fees
+- Docker & Docker Compose
+- Python 3
+- 4 CPU cores, 16GB RAM, 500GB SSD per chain
+- Public IP with available ports
 
-## Quick Start
-
-### 1. Clone and Setup
+## Initial Setup (First Time)
 
 ```bash
-git clone <your-repo-url>
-cd cosmos-validator
+# 1. Setup environment
+make setup
 
-# Create secrets directory
-mkdir -p secrets
-```
+# 2. Create config.yml with global settings
+# Copy the example from config.yml (if it exists) or create from scratch
+# Set Grafana password, Slack webhook, etc.
 
-### 2. Configure Environment
+# 3. Configure chains.yaml
+nano chains.yaml  # Enable desired chains
 
-```bash
-cp env.example .env
-nano .env
-```
+# 4. Create mnemonics for each chain
+make create-mnemonic cosmos
+make create-mnemonic osmosis
 
-Edit the following values:
-- `MONIKER`: Your validator name
-- `EXTERNAL_IP`: Your server's public IP
-- `VALIDATOR_NAME`: Display name for your validator
-- `VALIDATOR_WEBSITE`: Your website URL
-- `VALIDATOR_SECURITY_CONTACT`: Email for security issues
-- `COMMISSION_RATE`: Commission rate (e.g., 0.10 for 10%)
-- `GRAFANA_ADMIN_PASSWORD`: Secure password for Grafana
+# 5. Generate configuration
+make generate
 
-### 3. Setup Validator Keys
+# 6. Start all enabled chains
+make start
 
-**Option A: Generate New Keys** (recommended for new validators)
-
-The keys will be automatically generated on first startup. You'll need to save the mnemonic that gets displayed.
-
-**Option B: Import Existing Keys**
-
-If you have an existing mnemonic:
-
-```bash
-echo "your mnemonic phrase here" > secrets/validator_mnemonic.txt
-chmod 600 secrets/validator_mnemonic.txt
-```
-
-### 4. Start the Validator
-
-```bash
-docker-compose up -d
-```
-
-This will:
-- Build the Cosmos node container with Cosmovisor
-- Initialize the node with proper configuration
-- Download a recent snapshot from Polkachu (fast sync)
-- Start all monitoring services
-- Generate or import validator keys
-
-### 5. Monitor Initial Sync
-
-```bash
-# Watch logs
-docker-compose logs -f cosmos-node
-
-# Check sync status
-docker exec cosmos-validator /scripts/check-status.sh
-```
-
-Wait until the node is fully synced (can take 30 minutes to several hours depending on snapshot).
-
-### 6. Fund Your Validator
-
-Get your validator address:
-
-```bash
-docker exec cosmos-validator gaiad keys show validator -a --keyring-backend test
-```
-
-Send at least **2 ATOM** to this address:
-- 1 ATOM for self-delegation
-- Extra for transaction fees
-
-Verify balance:
-
-```bash
-docker exec cosmos-validator /scripts/check-status.sh
-```
-
-### 7. Create Validator
-
-Once synced and funded:
-
-```bash
-docker exec -it cosmos-validator /scripts/create-validator.sh
-```
-
-Follow the prompts to confirm validator creation.
-
-### 8. Setup Slack Notifications
-
-See [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md) for detailed instructions.
-
-Once you have a webhook URL:
-
-```bash
-# Add to .env file
-echo "SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL" >> .env
-
-# Restart alertmanager
-docker-compose restart alertmanager
-```
-
-### 9. Access Monitoring
-
-- **Grafana Dashboard**: http://YOUR_IP:3000
-  - Username: `admin`
-  - Password: (from .env file)
-  - Navigate to "Cosmos Hub Validator Dashboard"
-
-- **Prometheus**: http://YOUR_IP:9090
-- **Alertmanager**: http://YOUR_IP:9093
-
-## Common Operations
-
-### Check Validator Status
-
-```bash
+# 7. Check status
 make status
-# or
-docker exec cosmos-validator /scripts/check-status.sh
 ```
 
-### View Logs
+## All Make Commands
+
+### Setup & Configuration
 
 ```bash
-# All services
-docker-compose logs -f
-
-# Just validator node
-docker-compose logs -f cosmos-node
-
-# Specific number of lines
-docker-compose logs --tail=100 cosmos-node
+make setup              # First-time environment setup
+make generate           # Generate docker-compose.yml from chains.yaml
+make list-chains        # List all configured chains
+make validate-config    # Validate chains.yaml syntax
+make enable-chain <chain>   # Enable chain in chains.yaml
+make disable-chain <chain>  # Disable chain in chains.yaml
 ```
 
-### Backup Keys
+### Chain Management
 
 ```bash
-make backup
-# or
-docker exec cosmos-validator /scripts/backup-keys.sh
-```
-
-**CRITICAL**: Copy the backup to multiple secure locations!
-
-```bash
-docker cp cosmos-validator:/root/.gaia/backup/validator_backup_*.tar.gz ./
-```
-
-### Stop/Start Validator
-
-```bash
-# Stop all services
-docker-compose down
-
-# Start all services
-docker-compose up -d
-
-# Restart just the validator
-docker-compose restart cosmos-node
-```
-
-### Update Configuration
-
-```bash
-# Edit .env file
-nano .env
-
-# Restart services
-docker-compose down
-docker-compose up -d
-```
-
-### Manual Upgrade (if needed)
-
-Cosmovisor handles upgrades automatically, but if needed:
-
-```bash
-# Enter container
-docker exec -it cosmos-validator bash
-
-# Check cosmovisor status
-cosmovisor version
-
-# Current binary
-/root/.gaia/cosmovisor/current/bin/gaiad version
-```
-
-## Security Best Practices
-
-### Firewall Configuration
-
-```bash
-# Allow SSH
-sudo ufw allow 22/tcp
-
-# Allow P2P
-sudo ufw allow 26656/tcp
-
-# Allow RPC (optional, only if needed)
-sudo ufw allow 26657/tcp
-
-# Restrict monitoring to local only (use SSH tunnel for remote access)
-sudo ufw deny 3000/tcp
-sudo ufw deny 9090/tcp
-
-# Enable firewall
-sudo ufw enable
-```
-
-### SSH Tunneling for Remote Monitoring
-
-```bash
-# On your local machine
-ssh -L 3000:localhost:3000 -L 9090:localhost:9090 user@YOUR_SERVER_IP
-
-# Then access in browser:
-# http://localhost:3000 (Grafana)
-# http://localhost:9090 (Prometheus)
+make start              # Start all enabled services
+make stop               # Stop all services
+make restart            # Restart all services
+make start-chain <chain>    # Start specific chain
+make stop-chain <chain>     # Stop specific chain
+make restart-chain <chain>  # Restart specific chain
+make logs-chain <chain>      # View chain logs
+make status-chain <chain>    # Check chain status
+make shell-chain <chain>     # Enter chain container
+make init-chain <chain>      # Initialize chain
 ```
 
 ### Key Management
 
-- **Never commit secrets to Git**: The `.gitignore` file protects the `secrets/` directory
-- **Backup your mnemonic**: Store in multiple secure locations (encrypted USB, password manager, etc.)
-- **Backup priv_validator_key.json**: This file is critical for validator identity
-- **Use encrypted backups**: The backup script supports GPG encryption
-- **Rotate keys if compromised**: See [docs/OPERATIONS.md](docs/OPERATIONS.md)
+```bash
+make create-mnemonic <chain>  # Create mnemonic file for chain
+make create-keys <chain>      # Create new keys for chain
+make import-keys <chain>      # Import keys from mnemonic
+make show-address <chain>     # Show validator address
+make backup-keys <chain>      # Backup keys for specific chain
+make backup-all               # Backup all chain keys
+```
 
-### Regular Maintenance
+### Validator Operations
 
-- Monitor Slack alerts daily
-- Check Grafana dashboard weekly
-- Verify backups monthly
-- Update system packages regularly
-- Keep Docker and Docker Compose updated
+```bash
+make create-validator <chain>  # Create validator for chain
+make query-balance <chain>     # Query balance
+make query-validator <chain>   # Query validator info
+make query-delegations <chain> # Query delegations
+```
 
-## Monitoring & Alerts
+### Monitoring & Logs
 
-### Grafana Dashboard Panels
+```bash
+make logs               # View all logs
+make logs-node          # View validator node logs
+make logs-prom          # View Prometheus logs
+make logs-grafana      # View Grafana logs
+make logs-alert        # View Alertmanager logs
+make status            # Check all validators status
+make watch-status      # Watch all chain statuses (auto-refresh)
+make watch-chain <chain> # Watch specific chain status
+make urls              # Show all monitoring URLs
+make open-grafana      # Open Grafana in browser
+```
 
-- **Sync Status**: Real-time sync state
-- **Block Height**: Current block vs network
-- **Connected Peers**: P2P network health
-- **Missed Blocks**: Validator performance
-- **Voting Power**: Delegation tracking
-- **System Resources**: CPU, RAM, Disk usage
-- **Network Traffic**: Bandwidth monitoring
+### Upgrade Management
 
-### Alert Categories
+```bash
+make list-upgrades          # List pending upgrades from Polkachu
+make check-upgrade <chain>  # Check upgrade status for chain
+make prepare-upgrade CHAIN=<chain> UPGRADE_NAME=<name> BINARY_URL=<url>
+```
 
-**Critical Alerts** (immediate notification):
-- Node not syncing
-- Validator missing many blocks (slashing risk)
-- No peer connections
-- Critical resource usage
-- Validator jailed
+### Snapshots
 
-**Warning Alerts** (grouped notifications):
-- Node catching up
-- Missing some blocks
-- Low peer count
-- High resource usage
-- Large mempool
+```bash
+make list-snapshots <chain>  # List available snapshots
+make apply-snapshot CHAIN=<chain> SNAPSHOT_URL=<url>
+```
 
-**Info Alerts** (daily summary):
-- New delegations received
-- Voting power changes
-- Governance proposals
+### Maintenance
+
+```bash
+make diagnose          # Run system diagnostics
+make ps               # Show container status
+make stats            # Show container resource usage
+make prune-docker     # Prune unused Docker resources
+make rebuild          # Rebuild all containers
+make rebuild-chain <chain>  # Rebuild specific chain
+make clean-chain <chain>   # Remove chain container and volume
+make clean            # Remove all containers and volumes (DANGER!)
+```
+
+### Help
+
+```bash
+make help             # Show all available commands
+```
+
+## Monitoring URLs
+
+After starting, access monitoring at:
+
+- **Grafana**: http://YOUR_IP:3001 (default: admin / check config.yml)
+- **Prometheus**: http://YOUR_IP:9091
+- **Alertmanager**: http://YOUR_IP:9093
+
+Use `make urls` to see all URLs with your IP.
+
+## Configuration Files
+
+- **`chains.yaml`** - Chain-specific configuration (binary URLs, ports, network settings)
+- **`config.yml`** - Global settings and per-chain validator overrides
+- **`secrets/<chain>-mnemonic.txt`** - Chain mnemonics (gitignored)
+
+## Chains.yaml Configuration Reference
+
+The `chains.yaml` file defines all chain configurations. Each chain entry contains the following fields:
+
+### Basic Information
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `enabled` | boolean | Yes | Whether to run this validator | `true` |
+| `chain_id` | string | Yes | Official chain ID from the network | `"cosmoshub-4"` |
+| `chain_name` | string | Yes | Display name for the chain | `"Cosmos Hub"` |
+| `network` | string | Yes | Network identifier (must match Polkachu API) | `"cosmos"` |
+
+### Binary Configuration
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `binary_name` | string | Yes | Daemon executable name | `"gaiad"` |
+| `binary_version` | string | Yes | Current binary version | `"v25.1.0"` |
+| `binary_url` | string | Yes | Download URL for pre-built binary | `"https://github.com/cosmos/gaia/releases/download/v25.1.0/gaiad-v25.1.0-linux-amd64"` |
+| `daemon_home` | string | Yes | Home directory for chain data | `"/root/.gaia"` |
+
+### Port Configuration
+
+**Important**: Each chain must use unique ports to avoid conflicts.
+
+| Field | Type | Required | Description | Default |
+|-------|------|----------|-------------|---------|
+| `ports.p2p` | integer | Yes | P2P communication port | `26656` |
+| `ports.rpc` | integer | Yes | RPC server port | `26657` |
+| `ports.rest_api` | integer | Yes | REST API port | `1317` |
+| `ports.grpc` | integer | Yes | gRPC server port | `9090` |
+| `ports.prometheus` | integer | Yes | Prometheus metrics port | `26660` |
+
+**Port Allocation Guidelines**: Use consistent offsets per chain:
+- Cosmos: +0 (26656, 26657, 1317, 9090, 26660)
+- Osmosis: +100 (26756, 26757, 1417, 9190, 26760)
+- Juno: +200 (26856, 26857, 1517, 9290, 26860)
+
+### Network Configuration
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `genesis_url` | string | Yes | URL to download genesis.json | `"https://snapshots.polkachu.com/genesis/cosmos/genesis.json"` |
+| `snapshot_url` | string | No | URL for blockchain snapshot (for fast sync) | `"https://snapshots.polkachu.com/snapshots/cosmos/cosmos_28294157.tar.lz4"` |
+| `snapshot_wasm_url` | string | No | URL for WASM data (for CosmWasm chains) | `"https://snapshots.polkachu.com/wasm/cosmos/cosmos_wasmonly.tar.lz4"` |
+| `persistent_peers` | string | Yes | Comma-separated list of peer addresses | `"peer1@ip:port,peer2@ip:port"` |
+| `state_sync_rpc` | array | Yes | List of RPC endpoints for state-sync | `["https://rpc.example.com:443"]` |
+
+### Chain-Specific Settings
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `min_gas_price` | string | Yes | Minimum gas price with denom | `"0.005uatom"` |
+| `denom` | string | Yes | Base denomination (smallest unit) | `"uatom"` |
+| `denom_display` | string | Yes | Display denomination (human-readable) | `"ATOM"` |
+| `decimals` | integer | Yes | Decimal places for the token | `6` |
+| `block_time_seconds` | integer | No | Average block time in seconds (for upgrade calculations) | `6` |
+| `block_explorer_url` | string | No | Block explorer URL template with `{address}` placeholder | `"https://www.mintscan.io/cosmos/validators/{address}"` |
+| `min_self_delegation` | string | No | Minimum self-delegation amount (in base denom) | `"1000000"` |
+
+### Validator Configuration (Optional)
+
+Optional per-chain validator overrides. If not specified, uses defaults from `config.yml`. Only specify fields you want to override.
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `validator.moniker` | string | No | Validator moniker (node name) | `"cosmos-validator"` |
+| `validator.name` | string | No | Validator display name | `"My Cosmos Validator"` |
+| `validator.website` | string | No | Validator website URL | `"https://example.com"` |
+| `validator.identity` | string | No | Keybase identity (for validator logo) | `"ABC123DEF456"` |
+| `validator.details` | string | No | Validator description | `"A reliable Cosmos Hub validator"` |
+| `validator.security_contact` | string | No | Security contact email | `"security@example.com"` |
+| `validator.commission_rate` | float | No | Initial commission rate (as decimal) | `0.20` (20%) |
+| `validator.commission_max_rate` | float | No | Maximum commission rate (as decimal) | `0.20` (20%) |
+| `validator.commission_max_change_rate` | float | No | Max daily commission change (as decimal) | `0.01` (1%) |
+| `validator.external_ip` | string | No | External IP address | `"1.2.3.4"` |
+
+**Priority**: `chains.yaml` validator settings > `config.yml` defaults
+
+**Example**: To set a 20% commission for Osmosis while keeping all other defaults:
+```yaml
+osmosis:
+  # ... other chain config ...
+  validator:
+    commission_rate: 0.20  # Only this field overrides config.yml
+```
+
+### Pruning Configuration
+
+Controls how much blockchain history to keep. More aggressive pruning saves disk space but reduces query capabilities.
+
+| Field | Type | Required | Description | Values |
+|-------|------|----------|-------------|--------|
+| `pruning` | string | Yes | Pruning strategy | `"default"`, `"custom"`, `"nothing"`, `"everything"` |
+| `pruning_keep_recent` | string | Conditional | Blocks to keep (if custom) | `"100"` |
+| `pruning_keep_every` | string | Conditional | Snapshot interval (if custom) | `"0"` |
+| `pruning_interval` | string | Conditional | Pruning interval in blocks (if custom) | `"10"` |
+
+### Cosmovisor Settings
+
+Cosmovisor handles automatic chain upgrades.
+
+| Field | Type | Required | Description | Default |
+|-------|------|----------|-------------|---------|
+| `cosmovisor_enabled` | boolean | Yes | Use Cosmovisor for upgrades | `true` |
+| `auto_download_binaries` | boolean | Yes | Auto-download upgrade binaries | `true` |
+| `restart_after_upgrade` | boolean | Yes | Auto-restart after upgrade | `true` |
+
+### Repository
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `repo` | string | Yes | GitHub repository URL (for upgrade monitoring) | `"https://github.com/cosmos/gaia"` |
+
+## Config.yml Configuration Reference
+
+The `config.yml` file contains global settings and default validator configuration. These defaults can be overridden per-chain in `chains.yaml`.
+
+### Monitoring Configuration
+
+| Field | Type | Required | Description | Default |
+|-------|------|----------|-------------|---------|
+| `monitoring.prometheus_retention` | string | No | Prometheus data retention period | `"15d"` |
+| `monitoring.grafana_admin_password` | string | No | Grafana admin password | `"admin_change_me_now"` |
+
+### Alerting Configuration
+
+| Field | Type | Required | Description | Default |
+|-------|------|----------|-------------|---------|
+| `alerting.slack_webhook_url` | string | No | Slack webhook URL for alerts | `""` |
+| `alerting.alert_on_upgrade` | boolean | No | Send alerts for chain upgrades | `true` |
+| `alerting.alert_on_sync_issues` | boolean | No | Send alerts for sync problems | `true` |
+| `alerting.alert_on_missed_blocks` | boolean | No | Send alerts for missed blocks | `true` |
+
+### Upgrade Monitoring
+
+| Field | Type | Required | Description | Default |
+|-------|------|----------|-------------|---------|
+| `upgrade_monitoring.check_interval` | integer | No | How often to check for upgrades (seconds) | `300` |
+| `upgrade_monitoring.preparation_hours` | integer | No | Hours before upgrade to prepare binaries | `48` |
+
+### Backup Configuration
+
+| Field | Type | Required | Description | Default |
+|-------|------|----------|-------------|---------|
+| `backup.enabled` | boolean | No | Enable automatic backups | `true` |
+| `backup.schedule` | string | No | Cron schedule for backups | `"0 0 * * *"` |
+
+### Default Validator Configuration
+
+Default validator settings for all chains. These can be overridden per-chain in `chains.yaml`.
+
+| Field | Type | Required | Description | Default |
+|-------|------|----------|-------------|---------|
+| `validator_defaults.moniker` | string | No | Validator moniker (node name) | `""` (uses `<chain>-validator` pattern) |
+| `validator_defaults.external_ip` | string | No | External IP address | `""` |
+| `validator_defaults.name` | string | No | Validator display name | `"My Validator"` |
+| `validator_defaults.website` | string | No | Validator website URL | `"https://example.com"` |
+| `validator_defaults.identity` | string | No | Keybase identity | `""` |
+| `validator_defaults.details` | string | No | Validator description | `"A reliable Cosmos validator"` |
+| `validator_defaults.security_contact` | string | No | Security contact email | `"security@example.com"` |
+| `validator_defaults.commission_rate` | float | No | Initial commission rate | `0.10` (10%) |
+| `validator_defaults.commission_max_rate` | float | No | Maximum commission rate | `0.20` (20%) |
+| `validator_defaults.commission_max_change_rate` | float | No | Max daily commission change | `0.01` (1%) |
+
+**Note**: To override validator settings for a specific chain, add a `validator:` section in `chains.yaml`. Only the fields you specify will override the defaults. For example:
+
+```yaml
+# In chains.yaml
+osmosis:
+  # ... other chain config ...
+  validator:
+    commission_rate: 0.20  # Only override commission, everything else uses config.yml defaults
+```
+
+### Example Chain Configuration
+
+```yaml
+chains:
+  osmosis:
+    enabled: true
+    chain_id: "osmosis-1"
+    chain_name: "Osmosis"
+    network: "osmosis"
+    
+    binary_name: "osmosisd"
+    binary_version: "v28.0.0"
+    binary_url: "https://github.com/osmosis-labs/osmosis/releases/download/v28.0.0/osmosisd-28.0.0-linux-amd64"
+    daemon_home: "/root/.osmosisd"
+    
+    ports:
+      p2p: 26756
+      rpc: 26757
+      rest_api: 1417
+      grpc: 9190
+      prometheus: 26760
+    
+    genesis_url: "https://snapshots.polkachu.com/genesis/osmosis/genesis.json"
+    snapshot_url: "https://snapshots.polkachu.com/snapshots/osmosis/osmosis_28311949.tar.lz4"
+    snapshot_wasm_url: "https://snapshots.polkachu.com/wasm/osmosis/osmosis_wasmonly.tar.lz4"
+    
+    persistent_peers: "peer1@ip:port,peer2@ip:port"
+    state_sync_rpc:
+      - "https://osmosis-rpc.polkachu.com:443"
+      - "https://rpc.osmosis.zone:443"
+    
+    min_gas_price: "0.0025uosmo"
+    denom: "uosmo"
+    denom_display: "OSMO"
+    decimals: 6
+    
+    pruning: "custom"
+    pruning_keep_recent: "100"
+    pruning_keep_every: "0"
+    pruning_interval: "10"
+    
+    cosmovisor_enabled: true
+    auto_download_binaries: true
+    restart_after_upgrade: true
+    
+    repo: "https://github.com/osmosis-labs/osmosis"
+```
+
+### Finding Chain Information
+
+- **Binary URLs**: Check GitHub releases: `https://github.com/<org>/<repo>/releases`
+- **Genesis Files**: Usually at `https://snapshots.polkachu.com/genesis/<chain>/genesis.json`
+- **Peers**: Check [Cosmos Directory](https://cosmos.directory/) or chain documentation
+- **State Sync RPC**: Look for public RPC endpoints (Polkachu, official endpoints)
+
+### Validating Configuration
+
+After editing `chains.yaml`:
+
+```bash
+# Validate syntax
+make validate-config
+
+# Generate and test
+make generate
+```
+
+See [Chains Reference](docs/CHAINS_REFERENCE.md) for detailed documentation.
+
+## Documentation
+
+- **[Multi-Chain Setup Guide](docs/MULTI_CHAIN_SETUP.md)** - Complete deployment guide
+- **[Chains Reference](docs/CHAINS_REFERENCE.md)** - chains.yaml configuration reference
+- **[Operations Manual](docs/OPERATIONS.md)** - Day-to-day operations
+- **[Slack Setup](docs/SLACK_SETUP.md)** - Alerting configuration
+
+## Security
+
+- Never commit secrets to Git (`.gitignore` protects `secrets/`)
+- Backup mnemonics in multiple secure locations
+- Use firewall to restrict monitoring ports
+- Use SSH tunnels for remote monitoring access
+- **NEVER run same validator keys on multiple servers** (causes slashing)
 
 ## Troubleshooting
 
-### Node Won't Start
-
 ```bash
 # Check logs
-docker-compose logs cosmos-node
+make logs-chain <chain>
 
-# Common issue: port already in use
-sudo lsof -i :26656
-sudo lsof -i :26657
+# Check status
+make status-chain <chain>
 
-# Reset and restart
-docker-compose down
-docker-compose up -d
+# Run diagnostics
+make diagnose
+
+# View container stats
+make stats
 ```
 
-### Node Stuck Syncing
+## Support
 
-```bash
-# Check current status
-docker exec cosmos-validator curl -s http://localhost:26657/status | jq
-
-# Try downloading a fresh snapshot
-docker-compose down
-docker volume rm cosmos-validator_cosmos-data
-docker-compose up -d
-```
-
-### Missed Blocks
-
-```bash
-# Check validator signing info
-docker exec cosmos-validator gaiad query slashing signing-info \
-  $(docker exec cosmos-validator gaiad tendermint show-validator) \
-  --node http://localhost:26657
-```
-
-### Out of Memory
-
-```bash
-# Check current usage
-docker stats
-
-# Increase Docker memory limit or add swap
-```
-
-### Keys Not Found
-
-```bash
-# List keys
-docker exec cosmos-validator gaiad keys list --keyring-backend test
-
-# If empty, keys need to be reimported
-# Make sure secrets/validator_mnemonic.txt exists
-docker-compose restart cosmos-node
-```
-
-## Upgrading
-
-### Cosmovisor Automatic Upgrades
-
-Cosmovisor automatically handles chain upgrades:
-
-1. Upgrade proposal passes on-chain
-2. Cosmovisor downloads new binary (if `DAEMON_ALLOW_DOWNLOAD_BINARIES=true`)
-3. At upgrade height, Cosmovisor stops old binary
-4. Creates backup of data directory
-5. Starts new binary
-6. You receive Slack notification
-
-**Monitor Slack alerts during upgrades!**
-
-### Manual Binary Updates
-
-If you need to manually update:
-
-```bash
-# Enter container
-docker exec -it cosmos-validator bash
-
-# Download new binary
-cd /tmp
-wget https://github.com/cosmos/gaia/releases/download/vX.Y.Z/gaiad-vX.Y.Z-linux-amd64
-
-# Copy to cosmovisor upgrades directory
-mkdir -p /root/.gaia/cosmovisor/upgrades/vX.Y.Z/bin
-mv gaiad-vX.Y.Z-linux-amd64 /root/.gaia/cosmovisor/upgrades/vX.Y.Z/bin/gaiad
-chmod +x /root/.gaia/cosmovisor/upgrades/vX.Y.Z/bin/gaiad
-```
-
-## Disaster Recovery
-
-### Validator Key Compromise
-
-If your validator key is compromised:
-
-1. **Immediately stop the validator**:
-   ```bash
-   docker-compose down
-   ```
-
-2. **Create new validator** on different machine with new keys
-
-3. **Migrate delegations** (requires governance vote or manual delegation changes)
-
-### System Failure
-
-If your validator host fails:
-
-1. **Prepare new server** with same setup
-
-2. **Restore keys** from backup:
-   ```bash
-   tar -xzf validator_backup_*.tar.gz -C /path/to/new/validator/
-   ```
-
-3. **Start validator**:
-   ```bash
-   docker-compose up -d
-   ```
-
-4. **Verify sync and signing**:
-   ```bash
-   docker exec cosmos-validator /scripts/check-status.sh
-   ```
-
-### Double Signing Prevention
-
-**NEVER run the same validator keys on multiple servers simultaneously!**
-
-This causes double signing and results in **permanent slashing and jailing**.
-
-## Support & Resources
-
-- **Cosmos Hub Documentation**: https://hub.cosmos.network/
-- **Cosmos SDK**: https://docs.cosmos.network/
-- **Cosmovisor**: https://docs.cosmos.network/main/tooling/cosmovisor
-- **Cosmos Discord**: https://discord.gg/cosmosnetwork
-- **Cosmos Forum**: https://forum.cosmos.network/
-
-## Makefile Commands
-
-```bash
-make start          # Start all services
-make stop           # Stop all services
-make restart        # Restart all services
-make logs           # View all logs
-make status         # Check validator status
-make backup         # Backup validator keys
-make clean          # Stop and remove volumes (DANGER!)
-```
-
-## File Structure
-
-```
-cosmos-validator/
-├── docker-compose.yml       # Main orchestration file
-├── Dockerfile              # Cosmos node container
-├── Makefile                # Common commands
-├── README.md               # This file
-├── .env.example            # Environment template
-├── .gitignore             # Git ignore rules
-├── docs/                  # Documentation
-│   ├── SLACK_SETUP.md     # Slack integration guide
-│   └── OPERATIONS.md      # Operations manual
-├── scripts/               # Utility scripts
-│   ├── entrypoint.sh      # Container entrypoint
-│   ├── init-node.sh       # Node initialization
-│   ├── setup-keys.sh      # Key management
-│   ├── create-validator.sh # Validator creation
-│   ├── check-status.sh    # Status checker
-│   └── backup-keys.sh     # Backup utility
-├── prometheus/            # Prometheus config
-│   ├── prometheus.yml     # Scrape configuration
-│   └── alerts.yml         # Alert rules
-├── alertmanager/          # Alertmanager config
-│   └── alertmanager.yml   # Notification routing
-├── grafana/               # Grafana config
-│   └── provisioning/      # Auto-provisioning
-│       ├── datasources/   # Prometheus datasource
-│       └── dashboards/    # Validator dashboard
-└── secrets/               # Sensitive data (gitignored)
-    └── validator_mnemonic.txt
-```
+- [Cosmos SDK Docs](https://docs.cosmos.network/)
+- [Cosmovisor Guide](https://docs.cosmos.network/main/tooling/cosmovisor)
+- [Polkachu Snapshots](https://polkachu.com/tendermint_snapshots)
 
 ## License
 
@@ -515,12 +502,4 @@ MIT
 
 ## Disclaimer
 
-Running a validator carries financial risks. This setup is provided as-is with no guarantees. Always test on testnet first, maintain proper backups, and monitor your validator continuously.
-
-**You are responsible for:**
-- Securing your server and keys
-- Monitoring validator performance
-- Responding to alerts
-- Keeping software updated
-- Understanding slashing conditions
-
+Running a validator carries financial risks. Always test on testnet first, maintain proper backups, and monitor continuously.

@@ -2,13 +2,15 @@
 set -e
 
 echo "============================================"
-echo "Cosmos Hub Snapshot Installation"
+echo "${CHAIN_NETWORK:-Cosmos} Snapshot Installation"
 echo "============================================"
 echo ""
 
 # Configuration
-SNAPSHOT_URL="${1:-https://snapshots.polkachu.com/snapshots/cosmos/cosmos_28294157.tar.lz4}"
-DAEMON_HOME="/root/.gaia"
+DAEMON_HOME=${DAEMON_HOME}
+DAEMON_NAME=${DAEMON_NAME}
+SNAPSHOT_URL="${1:-${SNAPSHOT_URL}}"
+SNAPSHOT_WASM_URL="${SNAPSHOT_WASM_URL:-}"
 
 echo "Snapshot URL: $SNAPSHOT_URL"
 echo "Data directory: $DAEMON_HOME"
@@ -26,7 +28,7 @@ echo ""
 
 # Step 2: Reset the node (keep address book and config)
 echo "Step 2: Resetting node state..."
-gaiad tendermint unsafe-reset-all --home "$DAEMON_HOME" --keep-addr-book
+$DAEMON_NAME tendermint unsafe-reset-all --home "$DAEMON_HOME" --keep-addr-book
 echo "✓ Node state reset complete"
 echo ""
 
@@ -44,14 +46,14 @@ echo ""
 echo "Step 4: Downloading snapshot..."
 echo "This may take several minutes depending on your connection..."
 cd /tmp
-wget -O cosmos_snapshot.tar.lz4 "$SNAPSHOT_URL" --inet4-only --show-progress
+wget -O chain_snapshot.tar.lz4 "$SNAPSHOT_URL" --inet4-only --show-progress
 echo "✓ Snapshot downloaded"
 echo ""
 
 # Step 5: Extract snapshot
 echo "Step 5: Extracting snapshot to $DAEMON_HOME..."
 echo "This will take several minutes..."
-lz4 -c -d cosmos_snapshot.tar.lz4 | tar -x -C "$DAEMON_HOME"
+lz4 -c -d chain_snapshot.tar.lz4 | tar -x -C "$DAEMON_HOME"
 echo "✓ Snapshot extracted"
 echo ""
 
@@ -65,23 +67,28 @@ else
 fi
 echo ""
 
-# Step 7: Verify wasm folder
-echo "Step 7: Checking wasm folder..."
-if [ -d "$DAEMON_HOME/wasm" ] && [ "$(ls -A $DAEMON_HOME/wasm)" ]; then
-    echo "✓ wasm folder exists and is not empty"
+# Step 7: Verify wasm folder (if applicable)
+if [ ! -z "$SNAPSHOT_WASM_URL" ]; then
+    echo "Step 7: Checking wasm folder..."
+    if [ -d "$DAEMON_HOME/wasm" ] && [ "$(ls -A $DAEMON_HOME/wasm)" ]; then
+        echo "✓ wasm folder exists and is not empty"
+    else
+        echo "⚠ wasm folder is empty, downloading..."
+        cd /tmp
+        wget -O chain_wasmonly.tar.lz4 "$SNAPSHOT_WASM_URL" --inet4-only --show-progress
+        lz4 -c -d chain_wasmonly.tar.lz4 | tar -x -C "$DAEMON_HOME"
+        rm -f chain_wasmonly.tar.lz4
+        echo "✓ wasm folder downloaded and extracted"
+    fi
+    echo ""
 else
-    echo "⚠ wasm folder is empty, downloading..."
-    cd /tmp
-    wget -O cosmos_wasmonly.tar.lz4 https://snapshots.polkachu.com/wasm/cosmos/cosmos_wasmonly.tar.lz4 --inet4-only --show-progress
-    lz4 -c -d cosmos_wasmonly.tar.lz4 | tar -x -C "$DAEMON_HOME"
-    rm -f cosmos_wasmonly.tar.lz4
-    echo "✓ wasm folder downloaded and extracted"
+    echo "Step 7: Skipping wasm folder (not applicable for this chain)"
+    echo ""
 fi
-echo ""
 
 # Step 8: Clean up
 echo "Step 8: Cleaning up..."
-rm -f /tmp/cosmos_snapshot.tar.lz4
+rm -f /tmp/chain_snapshot.tar.lz4
 echo "✓ Cleanup complete"
 echo ""
 
@@ -92,6 +99,6 @@ echo ""
 echo "Next steps:"
 echo "1. Exit this container"
 echo "2. Run: docker-compose up -d"
-echo "3. Monitor: docker logs cosmos-validator -f"
+echo "3. Monitor logs with: docker-compose logs -f"
 echo ""
 

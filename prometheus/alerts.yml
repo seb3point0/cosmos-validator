@@ -4,7 +4,7 @@ groups:
     rules:
       # Node sync alerts
       - alert: ValidatorNodeNotSyncing
-        expr: tendermint_consensus_latest_block_height{job="cosmos-node"} == 0
+        expr: tendermint_consensus_latest_block_height{job=~".*-validator"} == 0
         for: 5m
         labels:
           severity: critical
@@ -13,7 +13,7 @@ groups:
           description: "The validator node has not seen any new blocks for 5 minutes. Block height is 0."
 
       - alert: ValidatorNodeCatchingUp
-        expr: tendermint_consensus_fast_syncing{job="cosmos-node"} == 1
+        expr: tendermint_consensus_fast_syncing{job=~".*-validator"} == 1
         for: 30m
         labels:
           severity: warning
@@ -22,7 +22,7 @@ groups:
           description: "The validator has been in catch-up mode for 30 minutes."
 
       - alert: ValidatorBlockHeightStale
-        expr: increase(tendermint_consensus_latest_block_height{job="cosmos-node"}[5m]) == 0
+        expr: increase(tendermint_consensus_latest_block_height{job=~".*-validator"}[5m]) == 0
         for: 5m
         labels:
           severity: critical
@@ -32,7 +32,7 @@ groups:
 
       # Validator performance alerts
       - alert: ValidatorMissingBlocks
-        expr: increase(tendermint_consensus_validator_missed_blocks{job="cosmos-node"}[1h]) > 5
+        expr: increase(tendermint_consensus_validator_missed_blocks{job=~".*-validator"}[1h]) > 5
         for: 5m
         labels:
           severity: warning
@@ -41,7 +41,7 @@ groups:
           description: "Validator has missed {{ $value }} blocks in the last hour."
 
       - alert: ValidatorHighMissedBlocks
-        expr: increase(tendermint_consensus_validator_missed_blocks{job="cosmos-node"}[1h]) > 20
+        expr: increase(tendermint_consensus_validator_missed_blocks{job=~".*-validator"}[1h]) > 20
         for: 5m
         labels:
           severity: critical
@@ -51,7 +51,7 @@ groups:
 
       # Peer connectivity alerts
       - alert: LowPeerCount
-        expr: tendermint_p2p_peers{job="cosmos-node"} < 3
+        expr: tendermint_p2p_peers{job=~".*-validator"} < 3
         for: 10m
         labels:
           severity: warning
@@ -60,7 +60,7 @@ groups:
           description: "Node has only {{ $value }} connected peers. Minimum recommended is 3."
 
       - alert: NoPeers
-        expr: tendermint_p2p_peers{job="cosmos-node"} == 0
+        expr: tendermint_p2p_peers{job=~".*-validator"} == 0
         for: 5m
         labels:
           severity: critical
@@ -116,7 +116,7 @@ groups:
 
       # Mempool alerts
       - alert: LargeMempool
-        expr: tendermint_mempool_size{job="cosmos-node"} > 1000
+        expr: tendermint_mempool_size{job=~".*-validator"} > 1000
         for: 10m
         labels:
           severity: warning
@@ -136,7 +136,7 @@ groups:
 
       # New delegations (monitoring for increases in voting power)
       - alert: NewDelegation
-        expr: increase(tendermint_consensus_validator_power{job="cosmos-node"}[10m]) > 0
+        expr: increase(tendermint_consensus_validator_power{job=~".*-validator"}[10m]) > 0
         for: 1m
         labels:
           severity: info
@@ -159,7 +159,7 @@ groups:
     rules:
       # Container health
       - alert: ContainerDown
-        expr: up{job=~"cosmos-node|prometheus|alertmanager"} == 0
+        expr: up{job=~".*-validator|prometheus|alertmanager"} == 0
         for: 2m
         labels:
           severity: critical
@@ -182,7 +182,7 @@ groups:
     rules:
       # Alert when there are active proposals
       - alert: ActiveGovernanceProposal
-        expr: tendermint_consensus_height{job="cosmos-node"} > 0
+        expr: tendermint_consensus_height{job=~".*-validator"} > 0
         for: 1h
         labels:
           severity: info
