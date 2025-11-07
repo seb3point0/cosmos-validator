@@ -162,21 +162,6 @@ create_validator() {
     echo "======================================"
     echo ""
     
-    # Build optional flags
-    OPTIONAL_FLAGS=""
-    if [ ! -z "$VALIDATOR_WEBSITE" ]; then
-        OPTIONAL_FLAGS="$OPTIONAL_FLAGS --website=\"$VALIDATOR_WEBSITE\""
-    fi
-    if [ ! -z "$VALIDATOR_IDENTITY" ]; then
-        OPTIONAL_FLAGS="$OPTIONAL_FLAGS --identity=\"$VALIDATOR_IDENTITY\""
-    fi
-    if [ ! -z "$VALIDATOR_DETAILS" ]; then
-        OPTIONAL_FLAGS="$OPTIONAL_FLAGS --details=\"$VALIDATOR_DETAILS\""
-    fi
-    if [ ! -z "$VALIDATOR_SECURITY_CONTACT" ]; then
-        OPTIONAL_FLAGS="$OPTIONAL_FLAGS --security-contact=\"$VALIDATOR_SECURITY_CONTACT\""
-    fi
-    
     echo -e "${YELLOW}⚠️  Review the configuration above carefully!${NC}"
     echo ""
     
@@ -191,29 +176,46 @@ create_validator() {
     echo ""
     echo -e "${BLUE}📝 Submitting validator creation transaction...${NC}"
     
-    # Create validator
-    gaiad tx staking create-validator \
-        --amount="${SELF_DELEGATION}uatom" \
-        --pubkey="$VALIDATOR_PUBKEY" \
-        --moniker="$VALIDATOR_NAME" \
-        --chain-id="$CHAIN_ID" \
-        --commission-rate="$COMMISSION_RATE" \
-        --commission-max-rate="$COMMISSION_MAX_RATE" \
-        --commission-max-change-rate="$COMMISSION_MAX_CHANGE_RATE" \
-        --min-self-delegation="1" \
-        --gas="auto" \
-        --gas-adjustment="1.5" \
-        --gas-prices="0.0025uatom" \
+    # Create validator JSON file (required for Gaia v25.1.0+)
+    VALIDATOR_JSON="$DAEMON_HOME/validator.json"
+    cat > "$VALIDATOR_JSON" <<EOF
+{
+    "pubkey": $VALIDATOR_PUBKEY,
+    "amount": "${SELF_DELEGATION}uatom",
+    "moniker": "$VALIDATOR_NAME",
+    "identity": "$VALIDATOR_IDENTITY",
+    "website": "$VALIDATOR_WEBSITE",
+    "security": "$VALIDATOR_SECURITY_CONTACT",
+    "details": "$VALIDATOR_DETAILS",
+    "commission-rate": "$COMMISSION_RATE",
+    "commission-max-rate": "$COMMISSION_MAX_RATE",
+    "commission-max-change-rate": "$COMMISSION_MAX_CHANGE_RATE",
+    "min-self-delegation": "1"
+}
+EOF
+    
+    # Create validator using JSON file
+    gaiad tx staking create-validator "$VALIDATOR_JSON" \
         --from=validator \
         --keyring-backend=test \
+        --chain-id="$CHAIN_ID" \
+        --gas="auto" \
+        --gas-adjustment="1.5" \
+        --gas-prices="0.005uatom" \
         --home="$DAEMON_HOME" \
         --node=http://localhost:26657 \
-        --yes \
-        $OPTIONAL_FLAGS
+        --yes
+    
+    # Clean up
+    rm -f "$VALIDATOR_JSON"
     
     echo ""
     echo -e "${GREEN}✓ Validator creation transaction submitted!${NC}"
     echo ""
+    
+    # Get validator operator address for display
+    VALOPER_ADDRESS=$(gaiad keys show validator --bech val -a --keyring-backend test --home "$DAEMON_HOME" 2>/dev/null || echo "")
+    
     echo "======================================"
     echo "🎉 Next Steps"
     echo "======================================"
@@ -223,9 +225,11 @@ create_validator() {
     echo "2. Check your validator status:"
     echo "   docker exec cosmos-validator /scripts/check-status.sh"
     echo ""
-    echo "3. View your validator on block explorers:"
-    echo "   https://www.mintscan.io/cosmos/validators/$VALOPER_ADDRESS"
-    echo ""
+    if [ ! -z "$VALOPER_ADDRESS" ]; then
+        echo "3. View your validator on block explorers:"
+        echo "   https://www.mintscan.io/cosmos/validators/$VALOPER_ADDRESS"
+        echo ""
+    fi
     echo "4. Edit your validator description (optional):"
     echo "   docker exec -it cosmos-validator gaiad tx staking edit-validator \\"
     echo "     --website=\"https://yoursite.com\" \\"

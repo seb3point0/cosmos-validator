@@ -83,7 +83,7 @@ APP_CONFIG="$DAEMON_HOME/config/app.toml"
 echo "Configuring app.toml..."
 
 # Set minimum gas prices (use env var if provided, otherwise use default)
-MIN_GAS_PRICES=${MIN_GAS_PRICES:-"0.0025uatom"}
+MIN_GAS_PRICES=${MIN_GAS_PRICES:-"0.005uatom"}
 echo "Setting minimum gas prices to: $MIN_GAS_PRICES"
 sed -i.bak "s/minimum-gas-prices = \"\"/minimum-gas-prices = \"$MIN_GAS_PRICES\"/" "$APP_CONFIG"
 

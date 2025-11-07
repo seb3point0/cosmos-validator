@@ -92,24 +92,38 @@ fi
 echo ""
 echo "Creating validator transaction..."
 
-# Create validator
-gaiad tx staking create-validator \
-    --amount=1000000uatom \
-    --pubkey="$VALIDATOR_PUBKEY" \
-    --moniker="$VALIDATOR_NAME" \
-    --chain-id="$CHAIN_ID" \
-    --commission-rate="$COMMISSION_RATE" \
-    --commission-max-rate="$COMMISSION_MAX_RATE" \
-    --commission-max-change-rate="$COMMISSION_MAX_CHANGE_RATE" \
-    --min-self-delegation="1" \
-    --gas="auto" \
-    --gas-adjustment="1.5" \
-    --gas-prices="0.0025uatom" \
+# Create validator JSON file (required for Gaia v25.1.0+)
+VALIDATOR_JSON="$DAEMON_HOME/validator.json"
+cat > "$VALIDATOR_JSON" <<EOF
+{
+    "pubkey": $VALIDATOR_PUBKEY,
+    "amount": "1000000uatom",
+    "moniker": "$VALIDATOR_NAME",
+    "identity": "$VALIDATOR_IDENTITY",
+    "website": "$VALIDATOR_WEBSITE",
+    "security": "$VALIDATOR_SECURITY_CONTACT",
+    "details": "$VALIDATOR_DETAILS",
+    "commission-rate": "$COMMISSION_RATE",
+    "commission-max-rate": "$COMMISSION_MAX_RATE",
+    "commission-max-change-rate": "$COMMISSION_MAX_CHANGE_RATE",
+    "min-self-delegation": "1"
+}
+EOF
+
+# Create validator using JSON file
+gaiad tx staking create-validator "$VALIDATOR_JSON" \
     --from=validator \
     --keyring-backend=test \
+    --chain-id="$CHAIN_ID" \
+    --gas="auto" \
+    --gas-adjustment="1.5" \
+    --gas-prices="0.005uatom" \
     --home="$DAEMON_HOME" \
     --node=http://localhost:26657 \
     --yes
+
+# Clean up
+rm -f "$VALIDATOR_JSON"
 
 echo ""
 echo "✓ Validator creation transaction submitted!"
