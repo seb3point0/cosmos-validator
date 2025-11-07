@@ -32,6 +32,9 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     grep \
     sed \
+    lz4 \
+    gnupg \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy binaries from both builders

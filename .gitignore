@@ -13,6 +13,8 @@ alertmanager-data/
 
 # Backups
 backups/
+validator-backup/
+backup/
 *.backup
 
 # Logs

@@ -21,5 +21,5 @@ if [ ! -f "$DAEMON_HOME/config/priv_validator_key.json" ]; then
 fi
 
 echo "Starting Cosmovisor..."
-exec cosmovisor run start --x-crisis-skip-assert-invariants --wasm.skip_wasmvm_version_check
+exec cosmovisor run start --wasm.skip_wasmvm_version_check
 

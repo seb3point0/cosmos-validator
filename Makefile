@@ -1,4 +1,4 @@
-.PHONY: help start stop restart logs status backup clean build
+.PHONY: help start stop restart logs status backup backup-copy backup-full backup-list clean build
 
 help:
 	@echo "Cosmos Hub Validator - Available Commands"
@@ -31,8 +31,15 @@ help:
 	@echo "  make setup-keys         - Set up validator keys"
 	@echo "  make keys-list          - List all keys"
 	@echo "  make keys-show          - Show validator key"
+	@echo "  make keys-add           - Create new validator key"
+	@echo "  make keys-recover       - Recover validator key from mnemonic"
 	@echo "  make validator-address  - Show validator addresses"
-	@echo "  make backup             - Backup validator keys"
+	@echo ""
+	@echo "💾 Backup & Recovery:"
+	@echo "  make backup             - Create backup inside container"
+	@echo "  make backup-copy        - Copy validator keys to host (./validator-backup/)"
+	@echo "  make backup-full        - Full backup (create + copy to host)"
+	@echo "  make backup-list        - List all backup files in container"
 	@echo ""
 	@echo "⚙️  Maintenance:"
 	@echo "  make apply-snapshot     - Apply a blockchain snapshot"
@@ -104,6 +111,28 @@ backup:
 	@echo ""
 	@echo "Don't forget to copy the backup file from the container:"
 	@echo "docker cp cosmos-validator:/root/.gaia/backup/ ./"
+
+backup-copy:
+	@echo "Copying validator keys from container to host..."
+	@mkdir -p ./validator-backup
+	@docker cp cosmos-validator:/root/.gaia/config/priv_validator_key.json ./validator-backup/priv_validator_key.json 2>/dev/null && echo "✓ Copied priv_validator_key.json" || echo "⚠️  priv_validator_key.json not found"
+	@docker cp cosmos-validator:/root/.gaia/config/node_key.json ./validator-backup/node_key.json 2>/dev/null && echo "✓ Copied node_key.json" || echo "⚠️  node_key.json not found"
+	@docker cp cosmos-validator:/root/.gaia/data/priv_validator_state.json ./validator-backup/priv_validator_state.json 2>/dev/null && echo "✓ Copied priv_validator_state.json" || echo "⚠️  priv_validator_state.json not found"
+	@docker cp cosmos-validator:/root/.gaia/backup/ ./validator-backup/ 2>/dev/null && echo "✓ Copied backup directory" || echo "ℹ️  No backup directory found"
+	@echo ""
+	@echo "✓ Backup complete! Files saved to: ./validator-backup/"
+	@ls -lh ./validator-backup/ 2>/dev/null || true
+	@echo ""
+	@echo "⚠️  IMPORTANT: Store these files securely offline!"
+
+backup-full:
+	@echo "Running full backup (create backup + copy to host)..."
+	@$(MAKE) backup
+	@$(MAKE) backup-copy
+
+backup-list:
+	@echo "Listing all backup and key files in container:"
+	@docker exec cosmos-validator find /root/.gaia -name "*validator*" -o -name "*backup*" -type f 2>/dev/null || echo "No files found"
 
 shell:
 	@echo "Entering validator container shell..."
