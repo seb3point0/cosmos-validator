@@ -204,11 +204,11 @@ def print_help(parser):
         'service': 'Monitoring services',
     }
     
-    print("Setup & Maintenance Commands:")
+    print("Setup & Maintenance:")
     for cmd, desc in sorted(setup_maintenance.items()):
         print(f"  {cmd:<12} {desc}")
     
-    print("\nDaily Operations Commands:")
+    print("\nChain Operations:")
     for cmd, desc in sorted(daily_operations.items()):
         print(f"  {cmd:<12} {desc}")
     

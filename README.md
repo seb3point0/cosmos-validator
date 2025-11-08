@@ -136,7 +136,7 @@ nano chains.yaml  # Enable desired chains
 
 ## CLI Commands
 
-### Setup & Maintenance Commands
+### Setup & Maintenance
 
 ```bash
 validay generate           # Generate docker-compose.yml from chains.yaml
