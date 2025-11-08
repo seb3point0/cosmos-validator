@@ -2,13 +2,13 @@
 # This Dockerfile supports any Cosmos-based chain by downloading pre-built binaries
 
 # Stage 1: Build Cosmovisor
-FROM golang:1.23-alpine AS cosmovisor-builder
+FROM --platform=linux/amd64 golang:1.23-alpine AS cosmovisor-builder
 
 # Install Cosmovisor with Go 1.23
 RUN go install cosmossdk.io/tools/cosmovisor/cmd/cosmovisor@latest
 
 # Stage 2: Final image
-FROM debian:bookworm-slim
+FROM --platform=linux/amd64 debian:bookworm-slim
 
 # Build arguments for chain configuration
 ARG CHAIN_BINARY_URL
@@ -35,11 +35,22 @@ RUN apt-get update && apt-get install -y \
 COPY --from=cosmovisor-builder /go/bin/cosmovisor /usr/local/bin/cosmovisor
 
 # Download and install chain binary
-RUN echo "Downloading ${CHAIN_BINARY_NAME} from ${CHAIN_BINARY_URL}..." && \
-    wget -O /tmp/chain-binary "${CHAIN_BINARY_URL}" && \
-    chmod +x /tmp/chain-binary && \
-    mv /tmp/chain-binary /usr/local/bin/${CHAIN_BINARY_NAME} && \
-    echo "${CHAIN_BINARY_NAME} ${CHAIN_VERSION} installed successfully"
+# Always try ARM64 binary first if available (works on both ARM64 hosts and amd64 containers)
+RUN BINARY_URL_ARM=$(echo "${CHAIN_BINARY_URL}" | sed 's/linux-amd64/linux-arm64/g') && \
+    echo "Checking for ARM64 binary: $BINARY_URL_ARM" && \
+    if wget --spider "$BINARY_URL_ARM" 2>/dev/null; then \
+        echo "✓ ARM64 binary found, using: $BINARY_URL_ARM" && \
+        wget -O /tmp/chain-binary "$BINARY_URL_ARM" && \
+        chmod +x /tmp/chain-binary && \
+        mv /tmp/chain-binary /usr/local/bin/${CHAIN_BINARY_NAME} && \
+        echo "${CHAIN_BINARY_NAME} ${CHAIN_VERSION} (ARM64) installed successfully"; \
+    else \
+        echo "ARM64 binary not available, using amd64: ${CHAIN_BINARY_URL}" && \
+        wget -O /tmp/chain-binary "${CHAIN_BINARY_URL}" && \
+        chmod +x /tmp/chain-binary && \
+        mv /tmp/chain-binary /usr/local/bin/${CHAIN_BINARY_NAME} && \
+        echo "${CHAIN_BINARY_NAME} ${CHAIN_VERSION} (amd64) installed successfully"; \
+    fi
 
 # Verify binary works
 RUN ${CHAIN_BINARY_NAME} version || echo "Binary verification skipped"

@@ -1,15 +1,31 @@
-# Multi-Chain Cosmos Validator
+# Validay
 
 Production-ready multi-chain Cosmos validator deployment with monitoring, alerting, and automatic upgrades.
 
 ## Features
 
 - **Multi-Chain Support**: Run validators for multiple Cosmos chains simultaneously
-- **Dockerized**: Single `make start` deployment
+- **Dockerized**: Single `validay chain start <chain>` deployment
 - **Auto-Upgrades**: Cosmovisor + Polkachu API integration
 - **Monitoring**: Prometheus + Grafana dashboards for all chains
 - **Alerting**: Slack notifications for critical events
 - **Centralized Config**: Manage all chains from `chains.yaml`
+
+## System Requirements
+
+### Architecture Compatibility
+
+**⚠️ Important**: This validator setup is designed for **x86_64 (amd64) Linux systems**. 
+
+**Apple Silicon (ARM64) Macs**: Pre-built Cosmos chain binaries use AVX2 CPU instructions that are not fully supported under Docker's QEMU emulation. Containers may crash with `SIGILL` errors.
+
+**Solutions for ARM64 hosts:**
+1. **Use x86_64 hardware** (recommended for production)
+2. **Use x86_64 cloud instances** (AWS, GCP, DigitalOcean, etc.)
+3. **Build binaries from source** for ARM64 (requires Go toolchain)
+4. **Use Colima or Lima** with x86_64 emulation (may have performance issues)
+
+The Dockerfile will automatically attempt to use ARM64 binaries if available, but most Cosmos chains only provide x86_64 binaries.
 
 ## Quick Start: Adding a New Chain
 
@@ -25,18 +41,18 @@ chains:
     # ... other settings
 ```
 
-### Step 2: Create Mnemonic File
+### Step 2: Setup Private Key
 
 ```bash
-make create-mnemonic osmosis
+./bin/validay keys setup osmosis
 ```
 
-This will prompt you to enter your mnemonic phrase and save it securely.
+This will prompt you to either provide your existing `priv_validator_key.json` content or generate a new one automatically.
 
 ### Step 3: Generate Configuration
 
 ```bash
-make generate
+./bin/validay generate
 ```
 
 Generates `docker-compose.yml` and `prometheus.yml` from `chains.yaml`.
@@ -44,41 +60,58 @@ Generates `docker-compose.yml` and `prometheus.yml` from `chains.yaml`.
 ### Step 4: Start the Chain
 
 ```bash
-make start-chain osmosis
+./bin/validay chain start osmosis
 ```
 
 ### Step 5: Monitor
 
 ```bash
 # View logs
-make logs-chain osmosis
+./bin/validay chain logs osmosis
 
 # Check status
-make status-chain osmosis
+./bin/validay chain status osmosis
 ```
 
 ### Step 6: Fund and Create Validator
 
 ```bash
 # Show validator address
-make show-address osmosis
+./bin/validay keys show osmosis
 
 # Send tokens to the address, then create validator
-make create-validator osmosis
+./bin/validay chain create-validator osmosis
 ```
 
 ## Prerequisites
 
 - Docker & Docker Compose
-- Python 3
+- Python 3.9 or later
 - 4 CPU cores, 16GB RAM, 500GB SSD per chain
 - Public IP with available ports
+
+## Installation
+
+The CLI is included in this repository. To use it:
+
+```bash
+# Install Python dependencies
+python3 -m pip install -r requirements.txt
+
+# Add to PATH (optional, for convenience)
+export PATH="$PATH:$(pwd)/bin"
+
+# Or use directly
+./bin/validay --help
+```
+
+**Note**: The CLI requires Python 3.9+ and the dependencies listed in `requirements.txt` (pyyaml, cryptography, mnemonic, bech32, bip-utils).
 
 ## Initial Setup (First Time)
 
 ```bash
-# 1. Setup environment
-make setup
+# 1. Install Python dependencies
+python3 -m pip install -r requirements.txt
 
 # 2. Create config.yml with global settings
 # Copy the example from config.yml (if it exists) or create from scratch
@@ -87,115 +120,113 @@ make setup
 # 3. Configure chains.yaml
 nano chains.yaml  # Enable desired chains
 
-# 4. Create mnemonics for each chain
-make create-mnemonic cosmos
-make create-mnemonic osmosis
+# 4. Setup private keys for each chain
+./bin/validay keys setup cosmos
+./bin/validay keys setup osmosis
 
 # 5. Generate configuration
-make generate
+./bin/validay generate
 
-# 6. Start all enabled chains
-make start
+# 6. Start a chain
+./bin/validay chain start cosmos
 
 # 7. Check status
-make status
+./bin/validay chain status cosmos
 ```
 
-## All Make Commands
+## CLI Commands
 
-### Setup & Configuration
+### Setup & Maintenance Commands
 
 ```bash
-make setup              # First-time environment setup
-make generate           # Generate docker-compose.yml from chains.yaml
-make list-chains        # List all configured chains
-make validate-config    # Validate chains.yaml syntax
-make enable-chain <chain>   # Enable chain in chains.yaml
-make disable-chain <chain>  # Disable chain in chains.yaml
+validay generate           # Generate docker-compose.yml from chains.yaml
+validay list               # List all configured chains
+validay validate          # Validate chains.yaml syntax
+validay ps                 # Show container status
+validay stats              # Show container resource usage
+validay diagnose           # Run system diagnostics
+validay prune              # Prune unused Docker resources
+validay upgrades           # List all pending upgrades
+validay clean              # Clean all containers, volumes, and generated files
 ```
 
 ### Chain Management
 
 ```bash
-make start              # Start all enabled services
-make stop               # Stop all services
-make restart            # Restart all services
-make start-chain <chain>    # Start specific chain
-make stop-chain <chain>     # Stop specific chain
-make restart-chain <chain>  # Restart specific chain
-make logs-chain <chain>      # View chain logs
-make status-chain <chain>    # Check chain status
-make shell-chain <chain>     # Enter chain container
-make init-chain <chain>      # Initialize chain
+validay service start      # Start all monitoring services
+validay service stop      # Stop all services
+validay service restart   # Restart all services
+validay chain start <chain>    # Start specific chain
+validay chain stop <chain>     # Stop specific chain
+validay chain restart <chain>  # Restart specific chain
+validay chain logs <chain>     # View chain logs
+validay chain status <chain>   # Check chain status
+validay chain shell <chain>    # Enter chain container
+validay chain init <chain>     # Initialize chain
+validay chain rebuild <chain>   # Rebuild chain container
+validay chain clean <chain>    # Remove chain container and volume
 ```
 
 ### Key Management
 
 ```bash
-make create-mnemonic <chain>  # Create mnemonic file for chain
-make create-keys <chain>      # Create new keys for chain
-make import-keys <chain>      # Import keys from mnemonic
-make show-address <chain>     # Show validator address
-make backup-keys <chain>      # Backup keys for specific chain
-make backup-all               # Backup all chain keys
+validay keys setup <chain>    # Setup private key (provide or generate)
+validay keys create <chain>   # Create new keys for chain
+validay keys import <chain>   # Import keys from private key
+validay keys show <chain>     # Show validator address
+validay backup              # Backup all chain keys
+validay backup <chain>       # Backup keys for specific chain
+validay backup --list        # List all backups
 ```
 
 ### Validator Operations
 
 ```bash
-make create-validator <chain>  # Create validator for chain
-make query-balance <chain>     # Query balance
-make query-validator <chain>   # Query validator info
-make query-delegations <chain> # Query delegations
+validay chain create-validator <chain>  # Create validator for chain
+validay query balance <chain>     # Query balance
+validay query validator <chain>   # Query validator info
+validay query delegations <chain> # Query delegations
 ```
 
 ### Monitoring & Logs
 
 ```bash
-make logs               # View all logs
-make logs-node          # View validator node logs
-make logs-prom          # View Prometheus logs
-make logs-grafana      # View Grafana logs
-make logs-alert        # View Alertmanager logs
-make status            # Check all validators status
-make watch-status      # Watch all chain statuses (auto-refresh)
-make watch-chain <chain> # Watch specific chain status
-make urls              # Show all monitoring URLs
-make open-grafana      # Open Grafana in browser
+validay service logs [service]   # View service logs (prometheus/grafana/alertmanager)
+validay chain logs <chain>        # View chain logs
+validay chain status <chain>      # Check chain status
 ```
 
 ### Upgrade Management
 
 ```bash
-make list-upgrades          # List pending upgrades from Polkachu
-make check-upgrade <chain>  # Check upgrade status for chain
-make prepare-upgrade CHAIN=<chain> UPGRADE_NAME=<name> BINARY_URL=<url>
+validay upgrade list                    # List pending upgrades from Polkachu
+validay upgrade check <chain>          # Check upgrade status for chain
+validay upgrade prepare <chain> --name <name> --url <url> [--height <height>]
 ```
 
 ### Snapshots
 
 ```bash
-make list-snapshots <chain>  # List available snapshots
-make apply-snapshot CHAIN=<chain> SNAPSHOT_URL=<url>
+validay snapshot list <chain>          # List available snapshots
+validay snapshot apply <chain> --url <url>  # Apply snapshot
 ```
 
 ### Maintenance
 
 ```bash
-make diagnose          # Run system diagnostics
-make ps               # Show container status
-make stats            # Show container resource usage
-make prune-docker     # Prune unused Docker resources
-make rebuild          # Rebuild all containers
-make rebuild-chain <chain>  # Rebuild specific chain
-make clean-chain <chain>   # Remove chain container and volume
-make clean            # Remove all containers and volumes (DANGER!)
+validay diagnose           # Run system diagnostics
+validay ps                 # Show container status
+validay stats              # Show container resource usage
+validay prune              # Prune unused Docker resources
+validay chain rebuild <chain>  # Rebuild specific chain
+validay chain clean <chain>    # Remove chain container and volume
 ```
 
 ### Help
 
 ```bash
-make help             # Show all available commands
+validay --help            # Show all available commands
+validay <command> --help  # Show help for specific command
 ```
 
 ## Monitoring URLs
@@ -206,13 +237,13 @@ After starting, access monitoring at:
 - **Prometheus**: http://YOUR_IP:9091
 - **Alertmanager**: http://YOUR_IP:9093
 
-Use `make urls` to see all URLs with your IP.
+Use `validay list` to see all configured chains and their status.
 
 ## Configuration Files
 
 - **`chains.yaml`** - Chain-specific configuration (binary URLs, ports, network settings)
 - **`config.yml`** - Global settings and per-chain validator overrides
-- **`secrets/<chain>-mnemonic.txt`** - Chain mnemonics (gitignored)
+- **`secrets/<chain>-private-key.json`** - Chain private keys in priv_validator_key.json format (gitignored)
 
 ## Chains.yaml Configuration Reference
 
@@ -451,10 +482,10 @@ After editing `chains.yaml`:
 
 ```bash
 # Validate syntax
-make validate-config
+./bin/validay validate
 
 # Generate and test
-make generate
+./bin/validay generate
 ```
 
 See [Chains Reference](docs/CHAINS_REFERENCE.md) for detailed documentation.
@@ -469,7 +500,7 @@ See [Chains Reference](docs/CHAINS_REFERENCE.md) for detailed documentation.
 ## Security
 
 - Never commit secrets to Git (`.gitignore` protects `secrets/`)
-- Backup mnemonics in multiple secure locations
+- Backup private keys in multiple secure locations
 - Use firewall to restrict monitoring ports
 - Use SSH tunnels for remote monitoring access
 - **NEVER run same validator keys on multiple servers** (causes slashing)
@@ -478,16 +509,16 @@ See [Chains Reference](docs/CHAINS_REFERENCE.md) for detailed documentation.
 
 ```bash
 # Check logs
-make logs-chain <chain>
+./bin/validay chain logs <chain>
 
 # Check status
-make status-chain <chain>
+./bin/validay chain status <chain>
 
 # Run diagnostics
-make diagnose
+./bin/validay diagnose
 
 # View container stats
-make stats
+./bin/validay stats
 ```
 
 ## Support

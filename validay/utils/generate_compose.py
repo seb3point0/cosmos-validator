@@ -1,36 +1,14 @@
-#!/usr/bin/env python3
 """
 Generate docker-compose.yml from chains.yaml configuration
-This script creates a multi-chain validator setup with shared monitoring
+This module creates a multi-chain validator setup with shared monitoring
 """
 
 import yaml
-import sys
-from typing import Dict, List, Any
+from typing import Dict, List, Tuple
+from pathlib import Path
 
-def load_chains_config(config_file: str = 'chains.yaml') -> Dict:
-    """Load the chains configuration file"""
-    try:
-        with open(config_file, 'r') as f:
-            return yaml.safe_load(f)
-    except FileNotFoundError:
-        print(f"Error: {config_file} not found")
-        sys.exit(1)
-    except yaml.YAMLError as e:
-        print(f"Error parsing {config_file}: {e}")
-        sys.exit(1)
+from ..config import load_chains_config, load_global_config, get_project_root
 
-def load_global_config(config_file: str = 'config.yml') -> Dict:
-    """Load the global configuration file"""
-    try:
-        with open(config_file, 'r') as f:
-            return yaml.safe_load(f) or {}
-    except FileNotFoundError:
-        print(f"Warning: {config_file} not found, using defaults")
-        return {}
-    except yaml.YAMLError as e:
-        print(f"Error parsing {config_file}: {e}")
-        sys.exit(1)
 
 def create_chain_service(chain_name: str, chain_config: Dict, global_config: Dict = None) -> Dict:
     """Create a docker-compose service definition for a chain"""
@@ -77,6 +55,9 @@ def create_chain_service(chain_name: str, chain_config: Dict, global_config: Dic
                 'DAEMON_HOME': daemon_home
             }
         },
+        # Use platform emulation for amd64 binaries on ARM64 hosts
+        # This allows amd64 binaries to run on ARM64 via QEMU emulation
+        'platform': 'linux/amd64',
         'container_name': f'{chain_name}-validator',
         'restart': 'unless-stopped',
         'ports': [
@@ -91,6 +72,7 @@ def create_chain_service(chain_name: str, chain_config: Dict, global_config: Dic
             './scripts:/scripts:ro'
         ],
         'environment': [
+            f"CHAIN_NAME={chain_name}",
             f"CHAIN_ID={chain_config['chain_id']}",
             f"CHAIN_NETWORK={chain_config.get('chain_name', chain_name.title())}",
             # Moniker: chains.yaml > config.yml defaults > pattern default
@@ -132,9 +114,9 @@ def create_chain_service(chain_name: str, chain_config: Dict, global_config: Dic
             f"COMMISSION_MAX_CHANGE_RATE={validator_config['commission_max_change_rate']}"
         ],
         'secrets': [
-            f'{chain_name}_mnemonic'
+            f'{chain_name}_private_key'
         ],
-        'networks': ['cosmos-network'],
+        'networks': ['validay-network'],
         'healthcheck': {
             'test': [
                 'CMD',
@@ -157,6 +139,7 @@ def create_chain_service(chain_name: str, chain_config: Dict, global_config: Dic
     }
     
     return service
+
 
 def create_prometheus_service(enabled_chains: List[str], global_config: Dict = None) -> Dict:
     """Create Prometheus service with dynamic scrape configs"""
@@ -182,9 +165,10 @@ def create_prometheus_service(enabled_chains: List[str], global_config: Dict = N
             '--web.console.libraries=/usr/share/prometheus/console_libraries',
             '--web.console.templates=/usr/share/prometheus/consoles'
         ],
-        'networks': ['cosmos-network'],
+        'networks': ['validay-network'],
         'depends_on': [f'{chain}-validator' for chain in enabled_chains]
     }
+
 
 def create_upgrade_monitor_service(enabled_chains: List[str], global_config: Dict = None) -> Dict:
     """Create upgrade monitor service"""
@@ -215,7 +199,7 @@ def create_upgrade_monitor_service(enabled_chains: List[str], global_config: Dic
             f'SLACK_WEBHOOK_URL={slack_webhook}'
         ],
         'volumes': volumes,
-        'networks': ['cosmos-network'],
+        'networks': ['validay-network'],
         'depends_on': [f'{chain}-validator' for chain in enabled_chains],
         'logging': {
             'driver': 'json-file',
@@ -225,6 +209,7 @@ def create_upgrade_monitor_service(enabled_chains: List[str], global_config: Dic
             }
         }
     }
+
 
 def create_monitoring_services(global_config: Dict = None) -> Dict:
     """Create shared monitoring services (Grafana, Alertmanager, node-exporter)"""
@@ -252,7 +237,7 @@ def create_monitoring_services(global_config: Dict = None) -> Dict:
                 'GF_USERS_ALLOW_SIGN_UP=false',
                 'GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource'
             ],
-            'networks': ['cosmos-network'],
+            'networks': ['validay-network'],
             'depends_on': ['prometheus']
         },
         'alertmanager': {
@@ -271,7 +256,7 @@ def create_monitoring_services(global_config: Dict = None) -> Dict:
             'environment': [
                 f'SLACK_WEBHOOK_URL={slack_webhook}'
             ],
-            'networks': ['cosmos-network'],
+            'networks': ['validay-network'],
             'depends_on': ['prometheus']
         },
         'node-exporter': {
@@ -289,9 +274,10 @@ def create_monitoring_services(global_config: Dict = None) -> Dict:
                 '/sys:/host/sys:ro',
                 '/:/rootfs:ro'
             ],
-            'networks': ['cosmos-network']
+            'networks': ['validay-network']
         }
     }
+
 
 def generate_docker_compose(config: Dict, global_config: Dict = None) -> Dict:
     """Generate the complete docker-compose configuration"""
@@ -301,7 +287,7 @@ def generate_docker_compose(config: Dict, global_config: Dict = None) -> Dict:
     compose = {
         'services': {},
         'networks': {
-            'cosmos-network': {
+            'validay-network': {
                 'driver': 'bridge'
             }
         },
@@ -317,12 +303,11 @@ def generate_docker_compose(config: Dict, global_config: Dict = None) -> Dict:
             enabled_chains.append(chain_name)
             compose['services'][f'{chain_name}-validator'] = create_chain_service(chain_name, chain_config, global_config)
             compose['volumes'][f'{chain_name}-data'] = None
-            compose['secrets'][f'{chain_name}_mnemonic'] = {
-                'file': f'./secrets/{chain_name}-mnemonic.txt'
+            compose['secrets'][f'{chain_name}_private_key'] = {
+                'file': f'./secrets/{chain_name}-private-key.json'
             }
     
     if not enabled_chains:
-        print("Warning: No chains are enabled in chains.yaml")
         return compose
     
     # Add Prometheus with dynamic chain monitoring
@@ -340,6 +325,7 @@ def generate_docker_compose(config: Dict, global_config: Dict = None) -> Dict:
     
     return compose
 
+
 def generate_prometheus_config(config: Dict, global_config: Dict = None) -> str:
     """Generate prometheus.yml configuration for all enabled chains"""
     if global_config is None:
@@ -355,7 +341,7 @@ def generate_prometheus_config(config: Dict, global_config: Dict = None) -> str:
             'scrape_interval': '15s',
             'evaluation_interval': '15s',
             'external_labels': {
-                'monitor': 'cosmos-multi-validator'
+                'monitor': 'validay'
             }
         },
         'alerting': {
@@ -409,9 +395,15 @@ def generate_prometheus_config(config: Dict, global_config: Dict = None) -> str:
     return yaml.dump(prom_config, default_flow_style=False, sort_keys=False, width=120)
 
 
-def main():
-    """Main function"""
-    print("Generating docker-compose.yml and prometheus.yml from chains.yaml and config.yml...")
+def generate_files(root: Path = None) -> Tuple[Dict, str]:
+    """
+    Generate docker-compose and prometheus configurations
+    
+    Returns:
+        tuple: (compose_dict, prometheus_config_string)
+    """
+    if root is None:
+        root = get_project_root()
     
     # Load configurations
     config = load_chains_config()
@@ -420,35 +412,40 @@ def main():
     # Generate docker-compose
     compose = generate_docker_compose(config, global_config)
     
+    # Generate prometheus.yml
+    prom_config = generate_prometheus_config(config, global_config)
+    
+    return compose, prom_config
+
+
+def write_files(root: Path = None) -> Tuple[Path, Path]:
+    """
+    Generate and write docker-compose.yml and prometheus.yml files
+    
+    Returns:
+        tuple: (docker_compose_path, prometheus_path)
+    """
+    if root is None:
+        root = get_project_root()
+    
+    compose, prom_config = generate_files(root)
+    
     # Write docker-compose.yml
-    output_file = 'docker-compose.yml'
+    output_file = root / 'docker-compose.yml'
     with open(output_file, 'w') as f:
-        f.write("# Auto-generated by generate-compose.py from chains.yaml and config.yml\n")
+        f.write("# Auto-generated by validay config generate from chains.yaml and config.yml\n")
         f.write("# DO NOT EDIT THIS FILE MANUALLY - Changes will be overwritten\n")
-        f.write("# To make changes, edit chains.yaml or config.yml and run: make generate\n\n")
+        f.write("# To make changes, edit chains.yaml or config.yml and run: validay config generate\n\n")
         yaml.dump(compose, f, default_flow_style=False, sort_keys=False, width=120)
     
     # Generate prometheus.yml
-    prom_config = generate_prometheus_config(config, global_config)
-    prom_file = 'prometheus/prometheus.yml'
+    prom_file = root / 'prometheus' / 'prometheus.yml'
+    prom_file.parent.mkdir(parents=True, exist_ok=True)
     with open(prom_file, 'w') as f:
-        f.write("# Auto-generated by generate-compose.py from chains.yaml and config.yml\n")
+        f.write("# Auto-generated by validay config generate from chains.yaml and config.yml\n")
         f.write("# DO NOT EDIT THIS FILE MANUALLY - Changes will be overwritten\n")
-        f.write("# To make changes, edit chains.yaml or config.yml and run: make generate\n\n")
+        f.write("# To make changes, edit chains.yaml or config.yml and run: validay config generate\n\n")
         f.write(prom_config)
     
-    enabled_chains = [name for name, cfg in config['chains'].items() if cfg.get('enabled', False)]
-    print(f"✓ Generated {output_file}")
-    print(f"✓ Generated {prom_file}")
-    print(f"✓ Enabled chains: {', '.join(enabled_chains) if enabled_chains else 'None'}")
-    print(f"✓ Services created: {len(compose['services'])}")
-    print(f"✓ Volumes created: {len(compose['volumes'])}")
-    print("\nNext steps:")
-    print("  1. Review the generated docker-compose.yml and prometheus.yml")
-    print("  2. Ensure secrets exist for each chain in ./secrets/")
-    print("  3. Review config.yml for global settings (Grafana password, Slack webhook, etc.)")
-    print("  4. Run: docker-compose up -d")
-
-if __name__ == '__main__':
-    main()
+    return output_file, prom_file
 

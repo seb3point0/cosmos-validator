@@ -1,0 +1,33 @@
+#!/bin/bash
+# Validay CLI wrapper - runs locally with Python
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Check if Python is available
+if ! command -v python3 &> /dev/null; then
+    echo "[ERROR] Python 3 not found. Please install Python 3.9 or later." >&2
+    exit 1
+fi
+
+# Check Python version (3.9+)
+PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
+PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
+
+if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 9 ]); then
+    echo "[ERROR] Python 3.9 or later is required. Found Python $PYTHON_VERSION" >&2
+    exit 1
+fi
+
+# Check if pyyaml is installed
+if ! python3 -c "import yaml" 2>/dev/null; then
+    echo "[ERROR] pyyaml not found. Please install dependencies:" >&2
+    echo "  python3 -m pip install -r $PROJECT_ROOT/requirements.txt" >&2
+    echo "  or: pip3 install -r $PROJECT_ROOT/requirements.txt" >&2
+    exit 1
+fi
+
+# Run the CLI locally
+cd "$PROJECT_ROOT"
+exec python3 -m validay "$@"

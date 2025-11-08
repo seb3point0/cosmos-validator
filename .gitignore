@@ -13,7 +13,6 @@ alertmanager-data/
 
 # Backups
 backups/
-validator-backup/
 backup/
 *.backup
 
@@ -34,4 +33,14 @@ Thumbs.db
 # Temporary files
 *.tmp
 *~
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Auto-generated files
+docker-compose.yml
+prometheus/prometheus.yml
 
