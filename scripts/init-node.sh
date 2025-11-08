@@ -14,6 +14,10 @@ PRUNING_KEEP_RECENT=${PRUNING_KEEP_RECENT:-100}
 PRUNING_KEEP_EVERY=${PRUNING_KEEP_EVERY:-0}
 PRUNING_INTERVAL=${PRUNING_INTERVAL:-10}
 P2P_PORT=${P2P_PORT:-26656}
+STATE_SYNC_TRUST_HEIGHT_OFFSET=${STATE_SYNC_TRUST_HEIGHT_OFFSET:-2000}
+STATE_SYNC_TRUST_PERIOD=${STATE_SYNC_TRUST_PERIOD:-168h0m0s}
+TIMEOUT_COMMIT=${TIMEOUT_COMMIT:-5s}
+PROMETHEUS_RETENTION_TIME=${PROMETHEUS_RETENTION_TIME:-60}
 
 # Validate required environment variables
 if [ -z "$DAEMON_HOME" ] || [ -z "$DAEMON_NAME" ] || [ -z "$CHAIN_ID" ] || [ -z "$MONIKER" ] || [ -z "$MIN_GAS_PRICES" ]; then
@@ -64,8 +68,8 @@ fi
 # Enable Prometheus metrics
 sed -i.bak 's/prometheus = false/prometheus = true/' "$CONFIG_FILE"
 
-# Increase timeout_commit for better performance
-sed -i.bak 's/timeout_commit = "5s"/timeout_commit = "5s"/' "$CONFIG_FILE"
+# Set timeout_commit from environment variable
+sed -i.bak "s/timeout_commit = \"5s\"/timeout_commit = \"${TIMEOUT_COMMIT}\"/" "$CONFIG_FILE"
 
 # Configure state-sync for fast sync
 if [ ! -z "$STATE_SYNC_RPC" ]; then
@@ -81,7 +85,7 @@ if [ ! -z "$STATE_SYNC_RPC" ]; then
     LATEST_HEIGHT=$(curl -s "$RPC1/block" | jq -r '.result.block.header.height' 2>/dev/null || echo "")
     
     if [ -n "$LATEST_HEIGHT" ] && [ "$LATEST_HEIGHT" != "null" ]; then
-        TRUST_HEIGHT=$((LATEST_HEIGHT - 2000))
+        TRUST_HEIGHT=$((LATEST_HEIGHT - STATE_SYNC_TRUST_HEIGHT_OFFSET))
         TRUST_HASH=$(curl -s "$RPC1/block?height=$TRUST_HEIGHT" | jq -r '.result.block_id.hash' 2>/dev/null || echo "")
     
     if [ -n "$TRUST_HASH" ] && [ "$TRUST_HASH" != "null" ]; then
@@ -95,7 +99,7 @@ if [ ! -z "$STATE_SYNC_RPC" ]; then
         sed -i.bak "s|rpc_servers = \"\"|rpc_servers = \"$RPC1,$RPC2\"|" "$CONFIG_FILE"
         sed -i.bak "s/trust_height = 0/trust_height = $TRUST_HEIGHT/" "$CONFIG_FILE"
         sed -i.bak "s/trust_hash = \"\"/trust_hash = \"$TRUST_HASH\"/" "$CONFIG_FILE"
-        sed -i.bak "s/trust_period = \"168h0m0s\"/trust_period = \"168h0m0s\"/" "$CONFIG_FILE"
+        sed -i.bak "s|trust_period = \"168h0m0s\"|trust_period = \"${STATE_SYNC_TRUST_PERIOD}\"|" "$CONFIG_FILE"
         echo "State-sync enabled successfully"
     else
         echo "Warning: Could not fetch trust hash. Skipping state-sync setup."
@@ -132,7 +136,7 @@ sed -i.bak "s/pruning-interval = \"0\"/pruning-interval = \"$PRUNING_INTERVAL\"/
 
 # Enable telemetry for Prometheus
 sed -i.bak 's/enabled = false/enabled = true/' "$APP_CONFIG" 
-sed -i.bak 's/prometheus-retention-time = 0/prometheus-retention-time = 60/' "$APP_CONFIG"
+sed -i.bak "s/prometheus-retention-time = 0/prometheus-retention-time = ${PROMETHEUS_RETENTION_TIME}/" "$APP_CONFIG"
 
 echo "Note: Snapshot download skipped for initial setup."
 echo "The node will sync from the network using state-sync or from peers."

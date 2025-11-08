@@ -28,6 +28,8 @@ POLKACHU_API_URL = os.getenv('POLKACHU_API_URL', 'https://polkachu.com/api/v2/ch
 CHECK_INTERVAL = int(os.getenv('CHECK_INTERVAL', '300'))  # 5 minutes
 SLACK_WEBHOOK_URL = os.getenv('SLACK_WEBHOOK_URL', '')
 PREPARATION_HOURS = int(os.getenv('PREPARATION_HOURS', '48'))
+API_TIMEOUT = int(os.getenv('API_TIMEOUT', '30'))
+DOCKER_EXEC_TIMEOUT = int(os.getenv('DOCKER_EXEC_TIMEOUT', '300'))
 
 # State file to track processed upgrades
 STATE_FILE = '/tmp/upgrade-monitor-state.json'
@@ -68,7 +70,7 @@ def fetch_polkachu_upgrades() -> List[Dict]:
     """Fetch upgrade information from Polkachu API"""
     try:
         logger.info(f"Fetching upgrades from {POLKACHU_API_URL}")
-        response = requests.get(POLKACHU_API_URL, timeout=30)
+        response = requests.get(POLKACHU_API_URL, timeout=API_TIMEOUT)
         response.raise_for_status()
         upgrades = response.json()
         logger.info(f"Found {len(upgrades)} pending upgrades")
@@ -100,12 +102,16 @@ def get_chain_binary_url(chain_config: Dict, version: str) -> Optional[str]:
     if not repo or not version:
         return None
     
-    # Construct GitHub release URL (works for most Cosmos chains)
-    # Format: https://github.com/org/repo/releases/download/VERSION/binary-VERSION-linux-amd64
-    binary_url = f"{repo}/releases/download/{version}/{binary_name}-{version}-linux-amd64"
+    # Get URL template from chain config, or use default GitHub pattern
+    binary_config = chain_config.get('binary', {})
+    url_template = binary_config.get('url_template', '{repo}/releases/download/{version}/{binary_name}-{version}-linux-amd64')
     
-    # Try without version suffix if first attempt fails
-    alt_url = f"{repo}/releases/download/{version}/{binary_name}"
+    # Replace template variables
+    binary_url = url_template.format(
+        repo=repo,
+        version=version,
+        binary_name=binary_name
+    )
     
     return binary_url
 
@@ -152,7 +158,7 @@ def prepare_upgrade(chain_name: str, chain_config: Dict, upgrade_info: Dict):
         ]
         
         logger.info(f"Running: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=DOCKER_EXEC_TIMEOUT)
         
         if result.returncode == 0:
             logger.info(f"✓ Upgrade prepared successfully for {chain_name}")

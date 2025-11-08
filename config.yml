@@ -10,6 +10,23 @@ monitoring:
   
   # Grafana admin password
   grafana_admin_password: "admin_change_me_now"
+  
+  # Monitoring service ports (shared across all chains)
+  ports:
+    prometheus: 9091
+    grafana: 3001
+    alertmanager: 9093
+    node_exporter: 9100
+  
+  # Prometheus scrape intervals
+  prometheus:
+    global_scrape_interval: "15s"
+    global_evaluation_interval: "15s"
+    chain_scrape_interval: "10s"  # Default per-chain scrape interval
+  
+  # Grafana query timeout
+  grafana:
+    query_timeout: "60s"
 
 # ============================================
 # Alerting Configuration
@@ -23,6 +40,11 @@ alerting:
   alert_on_upgrade: true
   alert_on_sync_issues: true
   alert_on_missed_blocks: true
+  
+  # Alertmanager timing configuration
+  group_wait: "10s"
+  group_interval: "10s"
+  repeat_interval: "3h"
 
 # ============================================
 # Upgrade Monitoring
@@ -33,6 +55,14 @@ upgrade_monitoring:
   
   # How many hours before upgrade to prepare binaries
   preparation_hours: 48
+  
+  # Upgrade API configuration
+  api_url: "https://polkachu.com/api/v2/chain_upgrades"
+  api_timeout: 30  # seconds
+  docker_exec_timeout: 300  # seconds
+  
+  # Python version for upgrade monitor container
+  python_version: "3.11"
 
 # ============================================
 # Backup Configuration
@@ -64,4 +94,74 @@ validator_defaults:
   commission_rate: 0.10  # 10%
   commission_max_rate: 0.20  # 20%
   commission_max_change_rate: 0.01  # 1% per day
+  
+  # Gas adjustment for transactions
+  gas_adjustment: 1.5
+
+# ============================================
+# State Sync Defaults
+# ============================================
+# Default state-sync settings for all chains
+# These can be overridden per-chain in chains.yaml
+state_sync_defaults:
+  # Number of blocks before latest height to use as trust height
+  trust_height_offset: 2000
+  
+  # Trust period for state-sync (how long to trust the trust height)
+  trust_period: "168h0m0s"  # 7 days
+
+# ============================================
+# Consensus Defaults
+# ============================================
+# Default consensus settings for all chains
+# These can be overridden per-chain in chains.yaml
+consensus_defaults:
+  # Timeout for commit phase
+  timeout_commit: "5s"
+
+# ============================================
+# Telemetry Defaults
+# ============================================
+# Default telemetry settings for all chains
+# These can be overridden per-chain in chains.yaml
+telemetry_defaults:
+  # Prometheus retention time in seconds (0 = disabled)
+  prometheus_retention_time: 60
+
+# ============================================
+# Binary Configuration Defaults
+# ============================================
+# Default binary URL template for upgrade downloads
+# Most chains use GitHub releases, but can be overridden per-chain
+binary_defaults:
+  # URL template for downloading binaries
+  # Variables: {repo}, {version}, {binary_name}
+  url_template: "{repo}/releases/download/{version}/{binary_name}-{version}-linux-amd64"
+
+# ============================================
+# Docker Configuration
+# ============================================
+docker:
+  # Docker platform/architecture
+  platform: "linux/amd64"
+  go_version: "1.23"
+  base_image: "debian:bookworm-slim"
+  
+  # Docker network name
+  network_name: "validay-network"
+  
+  # Container restart policy
+  restart_policy: "unless-stopped"
+  
+  # Default health check settings (can be overridden per-chain)
+  healthcheck_defaults:
+    interval: "30s"
+    timeout: "10s"
+    retries: 3
+    start_period: "120s"
+  
+  # Default logging settings (can be overridden per-chain)
+  logging_defaults:
+    max_size: "100m"
+    max_files: 3
 

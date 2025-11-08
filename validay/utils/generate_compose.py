@@ -17,9 +17,20 @@ def create_chain_service(chain_name: str, chain_config: Dict, global_config: Dic
     
     # Start with defaults from config.yml
     validator_defaults = global_config.get('validator_defaults', {})
+    state_sync_defaults = global_config.get('state_sync_defaults', {})
+    consensus_defaults = global_config.get('consensus_defaults', {})
+    telemetry_defaults = global_config.get('telemetry_defaults', {})
+    docker_config = global_config.get('docker', {})
+    healthcheck_defaults = docker_config.get('healthcheck_defaults', {})
+    logging_defaults = docker_config.get('logging_defaults', {})
     
-    # Get validator config from chains.yaml (if present)
+    # Get chain-specific configs from chains.yaml (if present)
     chain_validator_config = chain_config.get('validator', {})
+    chain_state_sync = chain_config.get('state_sync', {})
+    chain_consensus = chain_config.get('consensus', {})
+    chain_telemetry = chain_config.get('telemetry', {})
+    chain_healthcheck = chain_config.get('healthcheck', {})
+    chain_logging = chain_config.get('docker', {}).get('logging', {})
     
     # Merge: chains.yaml overrides > config.yml defaults
     # Start with defaults, then override with chain-specific values
@@ -33,7 +44,38 @@ def create_chain_service(chain_name: str, chain_config: Dict, global_config: Dic
         'security_contact': chain_validator_config.get('security_contact', validator_defaults.get('security_contact', '')),
         'commission_rate': chain_validator_config.get('commission_rate', validator_defaults.get('commission_rate', 0.10)),
         'commission_max_rate': chain_validator_config.get('commission_max_rate', validator_defaults.get('commission_max_rate', 0.20)),
-        'commission_max_change_rate': chain_validator_config.get('commission_max_change_rate', validator_defaults.get('commission_max_change_rate', 0.01))
+        'commission_max_change_rate': chain_validator_config.get('commission_max_change_rate', validator_defaults.get('commission_max_change_rate', 0.01)),
+        'gas_adjustment': chain_validator_config.get('gas_adjustment', validator_defaults.get('gas_adjustment', 1.5))
+    }
+    
+    # Merge state-sync config
+    state_sync_config = {
+        'trust_height_offset': chain_state_sync.get('trust_height_offset', state_sync_defaults.get('trust_height_offset', 2000)),
+        'trust_period': chain_state_sync.get('trust_period', state_sync_defaults.get('trust_period', '168h0m0s'))
+    }
+    
+    # Merge consensus config
+    consensus_config = {
+        'timeout_commit': chain_consensus.get('timeout_commit', consensus_defaults.get('timeout_commit', '5s'))
+    }
+    
+    # Merge telemetry config
+    telemetry_config = {
+        'prometheus_retention_time': chain_telemetry.get('prometheus_retention_time', telemetry_defaults.get('prometheus_retention_time', 60))
+    }
+    
+    # Merge healthcheck config
+    healthcheck_config = {
+        'interval': chain_healthcheck.get('interval', healthcheck_defaults.get('interval', '30s')),
+        'timeout': chain_healthcheck.get('timeout', healthcheck_defaults.get('timeout', '10s')),
+        'retries': chain_healthcheck.get('retries', healthcheck_defaults.get('retries', 3)),
+        'start_period': chain_healthcheck.get('start_period', healthcheck_defaults.get('start_period', '120s'))
+    }
+    
+    # Merge logging config
+    logging_config = {
+        'max_size': chain_logging.get('max_size', logging_defaults.get('max_size', '100m')),
+        'max_files': chain_logging.get('max_files', logging_defaults.get('max_files', 3))
     }
     
     # If moniker is empty, use default pattern
@@ -43,6 +85,10 @@ def create_chain_service(chain_name: str, chain_config: Dict, global_config: Dic
     binary_name = chain_config['binary_name']
     daemon_home = chain_config['daemon_home']
     ports = chain_config['ports']
+    
+    # Get Docker platform and restart policy from config
+    docker_platform = docker_config.get('platform', 'linux/amd64')
+    restart_policy = docker_config.get('restart_policy', 'unless-stopped')
     
     service = {
         'build': {
@@ -55,11 +101,10 @@ def create_chain_service(chain_name: str, chain_config: Dict, global_config: Dic
                 'DAEMON_HOME': daemon_home
             }
         },
-        # Use platform emulation for amd64 binaries on ARM64 hosts
-        # This allows amd64 binaries to run on ARM64 via QEMU emulation
-        'platform': 'linux/amd64',
+        # Use platform from config (allows amd64 binaries on ARM64 hosts via QEMU)
+        'platform': docker_platform,
         'container_name': f'{chain_name}-validator',
-        'restart': 'unless-stopped',
+        'restart': restart_policy,
         'ports': [
             f"{ports['p2p']}:{ports['p2p']}",      # P2P
             f"{ports['rpc']}:{ports['rpc']}",      # RPC
@@ -111,12 +156,20 @@ def create_chain_service(chain_name: str, chain_config: Dict, global_config: Dic
             f"VALIDATOR_SECURITY_CONTACT={validator_config['security_contact']}",
             f"COMMISSION_RATE={validator_config['commission_rate']}",
             f"COMMISSION_MAX_RATE={validator_config['commission_max_rate']}",
-            f"COMMISSION_MAX_CHANGE_RATE={validator_config['commission_max_change_rate']}"
+            f"COMMISSION_MAX_CHANGE_RATE={validator_config['commission_max_change_rate']}",
+            f"GAS_ADJUSTMENT={validator_config['gas_adjustment']}",
+            # State-sync configuration
+            f"STATE_SYNC_TRUST_HEIGHT_OFFSET={state_sync_config['trust_height_offset']}",
+            f"STATE_SYNC_TRUST_PERIOD={state_sync_config['trust_period']}",
+            # Consensus configuration
+            f"TIMEOUT_COMMIT={consensus_config['timeout_commit']}",
+            # Telemetry configuration
+            f"PROMETHEUS_RETENTION_TIME={telemetry_config['prometheus_retention_time']}"
         ],
         'secrets': [
             f'{chain_name}_private_key'
         ],
-        'networks': ['validay-network'],
+        'networks': [docker_config.get('network_name', 'validay-network')],
         'healthcheck': {
             'test': [
                 'CMD',
@@ -124,16 +177,16 @@ def create_chain_service(chain_name: str, chain_config: Dict, global_config: Dic
                 '-f',
                 f"http://localhost:{ports['rpc']}/health"
             ],
-            'interval': '30s',
-            'timeout': '10s',
-            'retries': 3,
-            'start_period': '120s'
+            'interval': healthcheck_config['interval'],
+            'timeout': healthcheck_config['timeout'],
+            'retries': healthcheck_config['retries'],
+            'start_period': healthcheck_config['start_period']
         },
         'logging': {
             'driver': 'json-file',
             'options': {
-                'max-size': '100m',
-                'max-file': '3'
+                'max-size': logging_config['max_size'],
+                'max-file': str(logging_config['max_files'])
             }
         }
     }
@@ -146,13 +199,17 @@ def create_prometheus_service(enabled_chains: List[str], global_config: Dict = N
     if global_config is None:
         global_config = {}
     
-    retention = global_config.get('monitoring', {}).get('prometheus_retention', '15d')
+    monitoring_config = global_config.get('monitoring', {})
+    docker_config = global_config.get('docker', {})
+    retention = monitoring_config.get('prometheus_retention', '15d')
+    prometheus_port = monitoring_config.get('ports', {}).get('prometheus', 9091)
+    network_name = docker_config.get('network_name', 'validay-network')
     
     return {
         'image': 'prom/prometheus:latest',
         'container_name': 'prometheus',
         'restart': 'unless-stopped',
-        'ports': ['9091:9090'],
+        'ports': [f'{prometheus_port}:9090'],
         'volumes': [
             './prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro',
             './prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro',
@@ -165,7 +222,7 @@ def create_prometheus_service(enabled_chains: List[str], global_config: Dict = N
             '--web.console.libraries=/usr/share/prometheus/console_libraries',
             '--web.console.templates=/usr/share/prometheus/consoles'
         ],
-        'networks': ['validay-network'],
+        'networks': [network_name],
         'depends_on': [f'{chain}-validator' for chain in enabled_chains]
     }
 
@@ -182,8 +239,13 @@ def create_upgrade_monitor_service(enabled_chains: List[str], global_config: Dic
         volumes.append(f'{chain}-data:/data/{chain}')
     
     upgrade_config = global_config.get('upgrade_monitoring', {})
+    docker_config = global_config.get('docker', {})
     check_interval = upgrade_config.get('check_interval', 300)
+    api_url = upgrade_config.get('api_url', 'https://polkachu.com/api/v2/chain_upgrades')
+    api_timeout = upgrade_config.get('api_timeout', 30)
+    docker_exec_timeout = upgrade_config.get('docker_exec_timeout', 300)
     slack_webhook = global_config.get('alerting', {}).get('slack_webhook_url', '')
+    network_name = docker_config.get('network_name', 'validay-network')
     
     return {
         'build': {
@@ -194,12 +256,14 @@ def create_upgrade_monitor_service(enabled_chains: List[str], global_config: Dic
         'restart': 'unless-stopped',
         'environment': [
             'CHAINS_CONFIG=/config/chains.yaml',
-            'POLKACHU_API_URL=https://polkachu.com/api/v2/chain_upgrades',
+            f'POLKACHU_API_URL={api_url}',
             f'CHECK_INTERVAL={check_interval}',
+            f'API_TIMEOUT={api_timeout}',
+            f'DOCKER_EXEC_TIMEOUT={docker_exec_timeout}',
             f'SLACK_WEBHOOK_URL={slack_webhook}'
         ],
         'volumes': volumes,
-        'networks': ['validay-network'],
+        'networks': [network_name],
         'depends_on': [f'{chain}-validator' for chain in enabled_chains],
         'logging': {
             'driver': 'json-file',
@@ -218,16 +282,22 @@ def create_monitoring_services(global_config: Dict = None) -> Dict:
     
     monitoring_config = global_config.get('monitoring', {})
     alerting_config = global_config.get('alerting', {})
+    docker_config = global_config.get('docker', {})
     
     grafana_password = monitoring_config.get('grafana_admin_password', 'admin')
+    grafana_port = monitoring_config.get('ports', {}).get('grafana', 3001)
+    grafana_query_timeout = monitoring_config.get('grafana', {}).get('query_timeout', '60s')
     slack_webhook = alerting_config.get('slack_webhook_url', '')
+    alertmanager_port = monitoring_config.get('ports', {}).get('alertmanager', 9093)
+    node_exporter_port = monitoring_config.get('ports', {}).get('node_exporter', 9100)
+    network_name = docker_config.get('network_name', 'validay-network')
     
     return {
         'grafana': {
             'image': 'grafana/grafana:latest',
             'container_name': 'grafana',
             'restart': 'unless-stopped',
-            'ports': ['3001:3000'],
+            'ports': [f'{grafana_port}:3000'],
             'volumes': [
                 './grafana/provisioning:/etc/grafana/provisioning:ro',
                 'grafana-data:/var/lib/grafana'
@@ -235,16 +305,17 @@ def create_monitoring_services(global_config: Dict = None) -> Dict:
             'environment': [
                 f'GF_SECURITY_ADMIN_PASSWORD={grafana_password}',
                 'GF_USERS_ALLOW_SIGN_UP=false',
-                'GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource'
+                'GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource',
+                f'GF_DATASOURCES_DEFAULT_QUERY_TIMEOUT={grafana_query_timeout}'
             ],
-            'networks': ['validay-network'],
+            'networks': [network_name],
             'depends_on': ['prometheus']
         },
         'alertmanager': {
             'image': 'prom/alertmanager:latest',
             'container_name': 'alertmanager',
             'restart': 'unless-stopped',
-            'ports': ['9093:9093'],
+            'ports': [f'{alertmanager_port}:9093'],
             'volumes': [
                 './alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro',
                 'alertmanager-data:/alertmanager'
@@ -256,14 +327,14 @@ def create_monitoring_services(global_config: Dict = None) -> Dict:
             'environment': [
                 f'SLACK_WEBHOOK_URL={slack_webhook}'
             ],
-            'networks': ['validay-network'],
+            'networks': [network_name],
             'depends_on': ['prometheus']
         },
         'node-exporter': {
             'image': 'prom/node-exporter:latest',
             'container_name': 'node-exporter',
             'restart': 'unless-stopped',
-            'ports': ['9100:9100'],
+            'ports': [f'{node_exporter_port}:9100'],
             'command': [
                 '--path.procfs=/host/proc',
                 '--path.sysfs=/host/sys',
@@ -274,7 +345,7 @@ def create_monitoring_services(global_config: Dict = None) -> Dict:
                 '/sys:/host/sys:ro',
                 '/:/rootfs:ro'
             ],
-            'networks': ['validay-network']
+            'networks': [network_name]
         }
     }
 
@@ -284,10 +355,13 @@ def generate_docker_compose(config: Dict, global_config: Dict = None) -> Dict:
     if global_config is None:
         global_config = {}
     
+    docker_config = global_config.get('docker', {})
+    network_name = docker_config.get('network_name', 'validay-network')
+    
     compose = {
         'services': {},
         'networks': {
-            'validay-network': {
+            network_name: {
                 'driver': 'bridge'
             }
         },
@@ -333,13 +407,17 @@ def generate_prometheus_config(config: Dict, global_config: Dict = None) -> str:
     
     enabled_chains = {name: cfg for name, cfg in config['chains'].items() if cfg.get('enabled', False)}
     
-    # Get retention from config.yml
-    retention = global_config.get('monitoring', {}).get('prometheus_retention', '15d')
+    monitoring_config = global_config.get('monitoring', {})
+    retention = monitoring_config.get('prometheus_retention', '15d')
+    prometheus_config = monitoring_config.get('prometheus', {})
+    global_scrape_interval = prometheus_config.get('global_scrape_interval', '15s')
+    global_evaluation_interval = prometheus_config.get('global_evaluation_interval', '15s')
+    chain_scrape_interval = prometheus_config.get('chain_scrape_interval', '10s')
     
     prom_config = {
         'global': {
-            'scrape_interval': '15s',
-            'evaluation_interval': '15s',
+            'scrape_interval': global_scrape_interval,
+            'evaluation_interval': global_evaluation_interval,
             'external_labels': {
                 'monitor': 'validay'
             }
@@ -357,6 +435,9 @@ def generate_prometheus_config(config: Dict, global_config: Dict = None) -> str:
     for chain_name, chain_config in enabled_chains.items():
         prometheus_port = chain_config.get('ports', {}).get('prometheus', 26660)
         chain_id = chain_config.get('chain_id', '')
+        # Get chain-specific scrape interval if set, otherwise use default
+        chain_monitoring = chain_config.get('monitoring', {})
+        chain_scrape_interval_override = chain_monitoring.get('scrape_interval', chain_scrape_interval)
         
         scrape_config = {
             'job_name': f'{chain_name}-validator',
@@ -369,7 +450,7 @@ def generate_prometheus_config(config: Dict, global_config: Dict = None) -> str:
                 }
             }],
             'metrics_path': '/metrics',
-            'scrape_interval': '10s'
+            'scrape_interval': chain_scrape_interval_override
         }
         prom_config['scrape_configs'].append(scrape_config)
     

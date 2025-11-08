@@ -199,7 +199,7 @@ validay chain status <chain>      # Check chain status
 ### Upgrade Management
 
 ```bash
-validay upgrade list                    # List pending upgrades from Polkachu
+validay upgrades                       # List all pending upgrades from Polkachu API
 validay upgrade check <chain>          # Check upgrade status for chain
 validay upgrade prepare <chain> --name <name> --url <url> [--height <height>]
 ```
@@ -207,8 +207,8 @@ validay upgrade prepare <chain> --name <name> --url <url> [--height <height>]
 ### Snapshots
 
 ```bash
-validay snapshot list <chain>          # List available snapshots
-validay snapshot apply <chain> --url <url>  # Apply snapshot
+validay snapshot list <chain>          # List available snapshots from Polkachu
+validay snapshot apply <chain> --url <url>  # Apply snapshot (requires --url)
 ```
 
 ### Maintenance
@@ -233,17 +233,33 @@ validay <command> --help  # Show help for specific command
 
 After starting, access monitoring at:
 
-- **Grafana**: http://YOUR_IP:3001 (default: admin / check config.yml)
+- **Grafana**: http://YOUR_IP:3001 (default: admin / check `config.yml` for password)
 - **Prometheus**: http://YOUR_IP:9091
 - **Alertmanager**: http://YOUR_IP:9093
+- **Node Exporter**: http://YOUR_IP:9100
 
-Use `validay list` to see all configured chains and their status.
+**Note**: Ports are configurable in `config.yml` under `monitoring.ports`. Use `validay list` to see all configured chains and their status.
 
 ## Configuration Files
 
-- **`chains.yaml`** - Chain-specific configuration (binary URLs, ports, network settings)
-- **`config.yml`** - Global settings and per-chain validator overrides
+- **`chains.yaml`** - Chain-specific configuration (binary URLs, ports, network settings, chain-specific overrides)
+- **`config.yml`** - Global settings, defaults, and per-chain validator overrides
 - **`secrets/<chain>-private-key.json`** - Chain private keys in priv_validator_key.json format (gitignored)
+
+### Configuration Priority
+
+When configuring chains, the priority order is:
+
+1. **Chain-specific overrides in `chains.yaml`** (highest priority)
+2. **Global defaults in `config.yml`**
+3. **Hardcoded fallbacks** (lowest priority)
+
+This allows you to:
+- Set sensible defaults in `config.yml` for all chains
+- Override specific settings per-chain in `chains.yaml` when needed
+- Keep configuration DRY (Don't Repeat Yourself)
+
+**Example**: If you set `state_sync_defaults.trust_height_offset: 2000` in `config.yml`, all chains will use 2000 blocks unless a specific chain overrides it in `chains.yaml`.
 
 ## Chains.yaml Configuration Reference
 
@@ -322,8 +338,72 @@ Optional per-chain validator overrides. If not specified, uses defaults from `co
 | `validator.commission_max_rate` | float | No | Maximum commission rate (as decimal) | `0.20` (20%) |
 | `validator.commission_max_change_rate` | float | No | Max daily commission change (as decimal) | `0.01` (1%) |
 | `validator.external_ip` | string | No | External IP address | `"1.2.3.4"` |
+| `validator.gas_adjustment` | float | No | Gas adjustment multiplier for transactions | `1.5` |
 
 **Priority**: `chains.yaml` validator settings > `config.yml` defaults
+
+### Chain-Specific State Sync Configuration (Optional)
+
+Override state-sync settings for specific chains. If not specified, uses defaults from `config.yml`.
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `state_sync.trust_height_offset` | integer | No | Blocks before latest height to use as trust height | `3000` |
+| `state_sync.trust_period` | string | No | Trust period for state-sync | `"336h0m0s"` (14 days) |
+
+### Chain-Specific Consensus Configuration (Optional)
+
+Override consensus settings for specific chains. If not specified, uses defaults from `config.yml`.
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `consensus.timeout_commit` | string | No | Timeout for commit phase | `"6s"` |
+
+### Chain-Specific Telemetry Configuration (Optional)
+
+Override telemetry settings for specific chains. If not specified, uses defaults from `config.yml`.
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `telemetry.prometheus_retention_time` | integer | No | Prometheus retention time in seconds | `120` |
+
+### Chain-Specific Health Check Configuration (Optional)
+
+Override health check settings for specific chains. Useful for slow-starting chains.
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `healthcheck.interval` | string | No | Health check interval | `"60s"` |
+| `healthcheck.timeout` | string | No | Health check timeout | `"15s"` |
+| `healthcheck.retries` | integer | No | Health check retries | `5` |
+| `healthcheck.start_period` | string | No | Health check start period | `"180s"` |
+
+### Chain-Specific Docker Logging Configuration (Optional)
+
+Override logging settings for specific chains. Useful for high-traffic chains that need more log retention.
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `docker.logging.max_size` | string | No | Maximum log file size | `"200m"` |
+| `docker.logging.max_files` | integer | No | Maximum number of log files | `5` |
+
+### Chain-Specific Monitoring Configuration (Optional)
+
+Override Prometheus scrape interval for specific chains.
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `monitoring.scrape_interval` | string | No | Prometheus scrape interval for this chain | `"5s"` |
+
+### Chain-Specific Binary URL Template (Optional)
+
+Override binary URL template for chains that don't use the standard GitHub release pattern.
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `binary.url_template` | string | No | URL template for downloading binaries | `"{repo}/releases/download/v{version}/{binary_name}"` |
+
+**Template Variables**: `{repo}`, `{version}`, `{binary_name}`
 
 **Example**: To set a 20% commission for Osmosis while keeping all other defaults:
 ```yaml
@@ -331,6 +411,23 @@ osmosis:
   # ... other chain config ...
   validator:
     commission_rate: 0.20  # Only this field overrides config.yml
+```
+
+**Example**: Chain-specific overrides for state-sync, consensus, and monitoring:
+```yaml
+cosmos:
+  # ... other chain config ...
+  state_sync:
+    trust_height_offset: 3000  # Override default 2000
+  consensus:
+    timeout_commit: "6s"  # Override default 5s
+  healthcheck:
+    start_period: "180s"  # Override default 120s for slow-starting chain
+  monitoring:
+    scrape_interval: "5s"  # More frequent monitoring for this chain
+  docker:
+    logging:
+      max_size: "200m"  # More log retention for high-traffic chain
 ```
 
 ### Pruning Configuration
@@ -370,6 +467,14 @@ The `config.yml` file contains global settings and default validator configurati
 |-------|------|----------|-------------|---------|
 | `monitoring.prometheus_retention` | string | No | Prometheus data retention period | `"15d"` |
 | `monitoring.grafana_admin_password` | string | No | Grafana admin password | `"admin_change_me_now"` |
+| `monitoring.ports.prometheus` | integer | No | External port for Prometheus | `9091` |
+| `monitoring.ports.grafana` | integer | No | External port for Grafana | `3001` |
+| `monitoring.ports.alertmanager` | integer | No | External port for Alertmanager | `9093` |
+| `monitoring.ports.node_exporter` | integer | No | External port for Node Exporter | `9100` |
+| `monitoring.prometheus.global_scrape_interval` | string | No | Global Prometheus scrape interval | `"15s"` |
+| `monitoring.prometheus.global_evaluation_interval` | string | No | Global Prometheus evaluation interval | `"15s"` |
+| `monitoring.prometheus.chain_scrape_interval` | string | No | Default per-chain scrape interval | `"10s"` |
+| `monitoring.grafana.query_timeout` | string | No | Grafana query timeout | `"60s"` |
 
 ### Alerting Configuration
 
@@ -379,6 +484,9 @@ The `config.yml` file contains global settings and default validator configurati
 | `alerting.alert_on_upgrade` | boolean | No | Send alerts for chain upgrades | `true` |
 | `alerting.alert_on_sync_issues` | boolean | No | Send alerts for sync problems | `true` |
 | `alerting.alert_on_missed_blocks` | boolean | No | Send alerts for missed blocks | `true` |
+| `alerting.group_wait` | string | No | Alertmanager group wait time | `"10s"` |
+| `alerting.group_interval` | string | No | Alertmanager group interval | `"10s"` |
+| `alerting.repeat_interval` | string | No | Alertmanager repeat interval | `"3h"` |
 
 ### Upgrade Monitoring
 
@@ -386,6 +494,10 @@ The `config.yml` file contains global settings and default validator configurati
 |-------|------|----------|-------------|---------|
 | `upgrade_monitoring.check_interval` | integer | No | How often to check for upgrades (seconds) | `300` |
 | `upgrade_monitoring.preparation_hours` | integer | No | Hours before upgrade to prepare binaries | `48` |
+| `upgrade_monitoring.api_url` | string | No | Upgrade API URL | `"https://polkachu.com/api/v2/chain_upgrades"` |
+| `upgrade_monitoring.api_timeout` | integer | No | API request timeout (seconds) | `30` |
+| `upgrade_monitoring.docker_exec_timeout` | integer | No | Docker exec timeout (seconds) | `300` |
+| `upgrade_monitoring.python_version` | string | No | Python version for upgrade monitor | `"3.11"` |
 
 ### Backup Configuration
 
@@ -410,6 +522,7 @@ Default validator settings for all chains. These can be overridden per-chain in 
 | `validator_defaults.commission_rate` | float | No | Initial commission rate | `0.10` (10%) |
 | `validator_defaults.commission_max_rate` | float | No | Maximum commission rate | `0.20` (20%) |
 | `validator_defaults.commission_max_change_rate` | float | No | Max daily commission change | `0.01` (1%) |
+| `validator_defaults.gas_adjustment` | float | No | Gas adjustment multiplier for transactions | `1.5` |
 
 **Note**: To override validator settings for a specific chain, add a `validator:` section in `chains.yaml`. Only the fields you specify will override the defaults. For example:
 
@@ -419,7 +532,59 @@ osmosis:
   # ... other chain config ...
   validator:
     commission_rate: 0.20  # Only override commission, everything else uses config.yml defaults
+    gas_adjustment: 2.0     # Override gas adjustment for this chain
 ```
+
+### State Sync Defaults
+
+Default state-sync settings for all chains. These can be overridden per-chain in `chains.yaml`.
+
+| Field | Type | Required | Description | Default |
+|-------|------|----------|-------------|---------|
+| `state_sync_defaults.trust_height_offset` | integer | No | Blocks before latest height to use as trust height | `2000` |
+| `state_sync_defaults.trust_period` | string | No | Trust period for state-sync | `"168h0m0s"` (7 days) |
+
+### Consensus Defaults
+
+Default consensus settings for all chains. These can be overridden per-chain in `chains.yaml`.
+
+| Field | Type | Required | Description | Default |
+|-------|------|----------|-------------|---------|
+| `consensus_defaults.timeout_commit` | string | No | Timeout for commit phase | `"5s"` |
+
+### Telemetry Defaults
+
+Default telemetry settings for all chains. These can be overridden per-chain in `chains.yaml`.
+
+| Field | Type | Required | Description | Default |
+|-------|------|----------|-------------|---------|
+| `telemetry_defaults.prometheus_retention_time` | integer | No | Prometheus retention time in seconds (0 = disabled) | `60` |
+
+### Binary Configuration Defaults
+
+Default binary URL template for upgrade downloads. Most chains use GitHub releases, but can be overridden per-chain.
+
+| Field | Type | Required | Description | Default |
+|-------|------|----------|-------------|---------|
+| `binary_defaults.url_template` | string | No | URL template for downloading binaries (variables: `{repo}`, `{version}`, `{binary_name}`) | `"{repo}/releases/download/{version}/{binary_name}-{version}-linux-amd64"` |
+
+### Docker Configuration
+
+Global Docker settings for all containers.
+
+| Field | Type | Required | Description | Default |
+|-------|------|----------|-------------|---------|
+| `docker.platform` | string | No | Docker platform/architecture | `"linux/amd64"` |
+| `docker.go_version` | string | No | Go version for Cosmovisor build | `"1.23"` |
+| `docker.base_image` | string | No | Base Docker image | `"debian:bookworm-slim"` |
+| `docker.network_name` | string | No | Docker network name | `"validay-network"` |
+| `docker.restart_policy` | string | No | Container restart policy | `"unless-stopped"` |
+| `docker.healthcheck_defaults.interval` | string | No | Health check interval | `"30s"` |
+| `docker.healthcheck_defaults.timeout` | string | No | Health check timeout | `"10s"` |
+| `docker.healthcheck_defaults.retries` | integer | No | Health check retries | `3` |
+| `docker.healthcheck_defaults.start_period` | string | No | Health check start period | `"120s"` |
+| `docker.logging_defaults.max_size` | string | No | Maximum log file size | `"100m"` |
+| `docker.logging_defaults.max_files` | integer | No | Maximum number of log files | `3` |
 
 ### Example Chain Configuration
 

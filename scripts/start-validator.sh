@@ -21,6 +21,9 @@ COMMISSION_RATE=${COMMISSION_RATE:-0.10}
 COMMISSION_MAX_RATE=${COMMISSION_MAX_RATE:-0.20}
 COMMISSION_MAX_CHANGE_RATE=${COMMISSION_MAX_CHANGE_RATE:-0.01}
 
+# Gas adjustment
+GAS_ADJUSTMENT=${GAS_ADJUSTMENT:-1.5}
+
 # Validate required environment variables
 if [ -z "$DAEMON_HOME" ] || [ -z "$DAEMON_NAME" ] || [ -z "$CHAIN_ID" ] || [ -z "$RPC_PORT" ]; then
     echo "Error: Required environment variables not set: DAEMON_HOME, DAEMON_NAME, CHAIN_ID, or RPC_PORT" >&2
@@ -66,7 +69,7 @@ $DAEMON_NAME tx staking create-validator "$VALIDATOR_JSON" \
     --keyring-backend=test \
     --chain-id="$CHAIN_ID" \
     --gas="auto" \
-    --gas-adjustment="1.5" \
+    --gas-adjustment="${GAS_ADJUSTMENT}" \
     --gas-prices="$MIN_GAS_PRICES" \
     --home="$DAEMON_HOME" \
     --node=http://localhost:${RPC_PORT} \
